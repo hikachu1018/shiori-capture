@@ -62,7 +62,7 @@ public class CaptureService extends AccessibilityService {
      width=bitmap.getWidth();height=bitmap.getHeight();
      long hash=fingerprint(bitmap);
      if(captured+1==resumeFirstScreen&&resumeLastHash!=null&&resumeLastHash==hash){
-      captured++;bitmap.recycle();working=false;hasHash=true;previousHash=hash;status("前回保存した画面を読み飛ばして再開しました");advance(id);return;
+      bitmap.recycle();working=false;hasHash=true;previousHash=hash;status("前回保存した画面を読み飛ばして再開しました");advance(id);return;
      }
      if(hasHash&&hash==previousHash){
       bitmap.recycle();working=false;
@@ -75,7 +75,7 @@ public class CaptureService extends AccessibilityService {
      worker.execute(()->process(id,ready,screen,hash));
      working=false;
      if(screen>=1000){requestStop("安全上限の1000画面に達したため停止しました。");return;}
-     advance(id);
+     if(screen!=resumeFirstScreen)advance(id);
     }
     public void onFailure(int code){working=false;if(overlay!=null)overlay.setVisibility(View.VISIBLE);requestStop("画面を撮影できませんでした（コード "+code+"）。画面ロック・撮影制限・権限を確認してください。");}
    });}catch(Exception e){working=false;requestStop("撮影を開始できません: "+e.getMessage());}
@@ -93,7 +93,7 @@ public class CaptureService extends AccessibilityService {
   }catch(Exception e){problem="文字認識・保存で停止: "+(e.getMessage()==null?e.getClass().getSimpleName():e.getMessage());}
   finally{bitmap.recycle();}
   final String error=problem;final boolean wasEmpty=empty,wasDuplicate=duplicate;
-  main.post(()->{pending--;if(wasEmpty&&!wasDuplicate)emptyCount++;if(id!=runId||!running)return;if(wasDuplicate)status("前回保存した画面を読み飛ばして再開しました");if(error!=null)requestStop(error);});
+  main.post(()->{pending--;if(wasEmpty&&!wasDuplicate)emptyCount++;if(id!=runId||!running)return;if(wasDuplicate){captured--;status("前回保存した画面を読み飛ばして再開しました");}if(error!=null)requestStop(error);else if(screen==resumeFirstScreen&&!cancel)advance(id);});
  }
  private void advance(int id){
   if(cancel||finishing||id!=runId)return;
