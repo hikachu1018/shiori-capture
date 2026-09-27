@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Insets;
@@ -43,10 +44,11 @@ public final class MainActivity extends Activity {
  private Spinner spinner(String[] options){Spinner s=new Spinner(this);s.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,options));content.addView(s,new LinearLayout.LayoutParams(-1,dp(48)));return s;}
  private void show(String message){new AlertDialog.Builder(this).setMessage(message).setPositiveButton("OK",null).show();}
  @Override public void onCreate(Bundle state){super.onCreate(state);db=new BookStore(this);
-  if(Store.prefs(this).getBoolean("running",false)&&CaptureService.instance==null){
-   long id=Store.prefs(this).getLong("runningBookId",-1);if(id>0)db.markPartial(id);
+  if(!CaptureService.running){
+   boolean interrupted=false;
+   for(BookStore.Book book:db.listBooks())if("capturing".equals(book.state)){db.markPartial(book.id);interrupted=true;}
    Store.prefs(this).edit().putBoolean("running",false).remove("runningBookId").apply();
-   Store.status(this,"前回の撮影が中断されました。保存済みの本文は本棚に残っています。");
+   if(interrupted)Store.status(this,"前回の撮影が中断されました。本棚から撮影を再開できます。");
   }
   ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(0xfff3f6f8);
   content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(22),dp(20),dp(22),dp(32));scroll.addView(content);setContentView(scroll);
@@ -66,22 +68,44 @@ public final class MainActivity extends Activity {
   content.addView(text("次ページへ送る指の方向",15,0xff24384b));direction=choices("右へ →","← 左へ");
   content.addView(text("開始までの準備時間",15,0xff24384b));countdown=spinner(new String[]{"30秒","60秒","10秒"});
   content.addView(text("ページ送り後の待ち時間",15,0xff24384b));interval=spinner(new String[]{"0.6秒（速い）","1秒（標準）","2秒（安定）"});interval.setSelection(1);
-  content.addView(text("初回は3画面ほどで手動停止し、OCRと章立てを確認してください。同じ画面が続くと自動停止します。",14,0xff536577));
+  content.addView(text("初回は3画面ほどで一時停止し、OCRと章立てを確認してください。本棚から同じ本の撮影を再開できます。同じ画面が続くと自動停止します。",14,0xff536577));
   start=button("撮影を開始",this::beginCapture);start.setTextColor(Color.WHITE);start.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff176f62));content.addView(start);
-  content.addView(button("撮影を停止",()->{if(CaptureService.instance!=null)CaptureService.instance.requestStop("手動で停止しました。");}));
+  content.addView(button("撮影を一時停止",()->{if(CaptureService.instance!=null)CaptureService.instance.requestStop("一時停止しました。");}));
   heading("必要なときに書き出す");destination=text("",14,0xff536577);content.addView(destination);
   content.addView(button("書き出し先フォルダを選ぶ",this::pickFolder));
   content.addView(text("本棚の「書き出す」から、章付きEPUBと本全体の本文PDFを作れます。画像PDFや章別PDFは作りません。",14,0xff536577));
-  content.addView(text("試用版 0.3.0 · Android 11以降",13,0xff536577));
+  content.addView(text("試用版 0.3.1 · Android 11以降",13,0xff536577));
   refreshBooks();refreshStatus();
  }
  private void beginCapture(){
-  CaptureService service=CaptureService.instance;if(service==null){show("先にユーザー補助の権限をオンにしてください。");return;}
+  if(CaptureService.instance==null){show("先にユーザー補助の権限をオンにしてください。");return;}
   if(CaptureService.running){show("撮影中です。");return;}
   String name=title.getText().toString().trim();if(name.isEmpty()){show("本の名前を入力してください。");return;}
   long id=db.createBook(name);
-  service.begin(id,writing.getCheckedRadioButtonId()==writing.getChildAt(0).getId(),direction.getCheckedRadioButtonId()==direction.getChildAt(0).getId(),new int[]{30,60,10}[countdown.getSelectedItemPosition()],new int[]{600,1000,2000}[interval.getSelectedItemPosition()]);
+  launchCapture(id,false,currentVertical(),currentRight(),currentWait());
+ }
+ private boolean currentVertical(){return writing.getCheckedRadioButtonId()==writing.getChildAt(0).getId();}
+ private boolean currentRight(){return direction.getCheckedRadioButtonId()==direction.getChildAt(0).getId();}
+ private int currentWait(){return new int[]{600,1000,2000}[interval.getSelectedItemPosition()];}
+ private void resumeCapture(BookStore.Book book){
+  if(CaptureService.instance==null){show("先にユーザー補助の権限をオンにしてください。");return;}
+  if(CaptureService.running){show("撮影中の本を先に一時停止してください。");return;}
+  SharedPreferences prefs=Store.prefs(this);boolean saved=prefs.contains("captureVertical."+book.id);
+  AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("「"+book.title+"」の撮影を再開")
+   .setMessage("Kindleで保存済みの最後の画面、またはその次の画面を開いてください。同じ画面は読み飛ばします。撮影中は画面上の「一時停止」でいつでも保存できます。")
+   .setNegativeButton("戻る",null);
+  if(saved){
+   dialog.setPositiveButton("前回の設定で再開",(d,w)->launchCapture(book.id,true,prefs.getBoolean("captureVertical."+book.id,true),prefs.getBoolean("captureRight."+book.id,true),prefs.getInt("captureWait."+book.id,1000)));
+   dialog.setNeutralButton("画面の設定で再開",(d,w)->launchCapture(book.id,true,currentVertical(),currentRight(),currentWait()));
+  }else dialog.setPositiveButton("現在の設定で再開",(d,w)->launchCapture(book.id,true,currentVertical(),currentRight(),currentWait()));
+  dialog.show();
+ }
+ private void launchCapture(long id,boolean resume,boolean vertical,boolean right,int wait){
+  CaptureService service=CaptureService.instance;
+  if(service==null||CaptureService.running){db.markPartial(id);refreshBooks();show("撮影を開始できませんでした。ユーザー補助の権限を確認してください。");return;}
+  service.begin(id,vertical,right,new int[]{30,60,10}[countdown.getSelectedItemPosition()],wait,resume);
   if(!CaptureService.running){db.markPartial(id);refreshBooks();show("撮影を開始できませんでした。状態欄を確認してください。");return;}
+  Store.prefs(this).edit().putBoolean("captureVertical."+id,vertical).putBoolean("captureRight."+id,right).putInt("captureWait."+id,wait).apply();
   Intent kindle=getPackageManager().getLaunchIntentForPackage("com.amazon.kindlefs");if(kindle==null)kindle=getPackageManager().getLaunchIntentForPackage("com.amazon.kindle");
   if(kindle!=null){try{startActivity(kindle);}catch(Exception e){show("Kindleを手動で開いてください。");}}else show("準備時間中にKindleを手動で開いてください。");
  }
@@ -97,6 +121,7 @@ public final class MainActivity extends Activity {
   for(BookStore.Book b:list){
    books.addView(text(b.title+(b.state.equals("partial")?" 〔途中まで〕":b.state.equals("capturing")?" 〔撮影中〕":""),17,0xff24384b));
    if(b.state.equals("capturing")){books.addView(text("撮影終了後に読書と章編集ができます。",14,0xff536577));continue;}
+   if(b.state.equals("partial"))books.addView(button("撮影を再開",()->resumeCapture(b)));
    LinearLayout first=new LinearLayout(this);
    first.addView(button("続きから読む",()->openReader(b.id,-1)),new LinearLayout.LayoutParams(0,dp(50),1));
    first.addView(button("章を選ぶ",()->chooseChapter(b.id)),new LinearLayout.LayoutParams(0,dp(50),1));books.addView(first);

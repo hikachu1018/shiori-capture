@@ -21,6 +21,7 @@ public class CaptureService extends AccessibilityService {
  private final ExecutorService worker=Executors.newSingleThreadExecutor();
  private boolean working=false,finishing=false,cancel=false; private int runId,captured,delay,retries,width,height,emptyCount,pending;
  private boolean vertical,right;private String stopReason="";private long previousHash;private boolean hasHash;
+ private int resumeFirstScreen=-1;private String resumeLastText="";private Long resumeLastHash;
  private LinearLayout overlay;private TextView overlayText;private WindowManager wm;
  private PowerManager.WakeLock wake;
  private TextRecognizer recognizer;private BookStore books;private long bookId;
@@ -29,10 +30,12 @@ public class CaptureService extends AccessibilityService {
  @Override public void onInterrupt(){requestStop("権限サービスが中断されました。");}
  @Override public void onDestroy(){requestStop("サービスが終了しました。保存済みの本文を本棚で確認してください。");instance=null;hideOverlay();super.onDestroy();}
  private boolean isKindle(){AccessibilityNodeInfo root=getRootInActiveWindow();if(root==null)return false;CharSequence p=root.getPackageName();String s=p==null?"":p.toString();return s.equals("com.amazon.kindlefs")||s.equals("com.amazon.kindle");}
- public void begin(long id,boolean v,boolean r,int seconds,int wait){
+ public void begin(long id,boolean v,boolean r,int seconds,int wait,boolean resume){
   if(running)return;
-  bookId=id;vertical=v;right=r;delay=wait;captured=0;emptyCount=0;pending=0;cancel=false;working=false;finishing=false;stopReason="";hasHash=false;retries=0;width=0;height=0;int run=++runId;
-  try{books=new BookStore(this);recognizer=TextRecognition.getClient(new JapaneseTextRecognizerOptions.Builder().build());
+  bookId=id;vertical=v;right=r;delay=wait;captured=0;emptyCount=0;pending=0;cancel=false;working=false;finishing=false;stopReason="";hasHash=false;retries=0;width=0;height=0;resumeFirstScreen=-1;resumeLastText="";resumeLastHash=null;int run=++runId;
+  try{books=new BookStore(this);
+   if(resume){BookStore.CaptureCheckpoint checkpoint=books.resumeCapture(bookId);captured=checkpoint.lastScreen;resumeFirstScreen=captured+1;resumeLastText=checkpoint.lastText;resumeLastHash=checkpoint.lastHash;}
+   recognizer=TextRecognition.getClient(new JapaneseTextRecognizerOptions.Builder().build());
    PowerManager pm=(PowerManager)getSystemService(POWER_SERVICE);wake=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"shiori:capture");wake.acquire(3*60*60*1000L);
    running=true;Store.prefs(this).edit().putBoolean("running",true).putLong("runningBookId",bookId).apply();showOverlay();countdown(run,seconds);
   }catch(Exception e){running=false;cleanup();Store.status(this,"開始できません: "+e.getMessage());}
@@ -58,6 +61,9 @@ public class CaptureService extends AccessibilityService {
      if(width!=0&&(width!=bitmap.getWidth()||height!=bitmap.getHeight())){bitmap.recycle();working=false;requestStop("画面の向きが変わったため停止しました。縦向きに固定して再実行してください。");return;}
      width=bitmap.getWidth();height=bitmap.getHeight();
      long hash=fingerprint(bitmap);
+     if(captured+1==resumeFirstScreen&&resumeLastHash!=null&&resumeLastHash==hash){
+      captured++;bitmap.recycle();working=false;hasHash=true;previousHash=hash;status("前回保存した画面を読み飛ばして再開しました");advance(id);return;
+     }
      if(hasHash&&hash==previousHash){
       bitmap.recycle();working=false;
       if(++retries>=2)requestStop("同じ画面が続いたため停止しました。本の末尾を確認してください。");
@@ -66,7 +72,7 @@ public class CaptureService extends AccessibilityService {
      }
      retries=0;hasHash=true;previousHash=hash;
      int screen=++captured;pending++;Bitmap ready=bitmap;
-     worker.execute(()->process(id,ready,screen));
+     worker.execute(()->process(id,ready,screen,hash));
      working=false;
      if(screen>=1000){requestStop("安全上限の1000画面に達したため停止しました。");return;}
      advance(id);
@@ -75,18 +81,19 @@ public class CaptureService extends AccessibilityService {
    });}catch(Exception e){working=false;requestStop("撮影を開始できません: "+e.getMessage());}
   },250);
  }
- private void process(int id,Bitmap bitmap,int screen){
-  String problem=null;boolean empty=false;
+ private void process(int id,Bitmap bitmap,int screen,long hash){
+  String problem=null;boolean empty=false,duplicate=false;
   try{
    Bitmap ocrBitmap=prepareOcr(bitmap);
    Text result;try{result=Tasks.await(recognizer.process(InputImage.fromBitmap(ocrBitmap,0)),90,TimeUnit.SECONDS);}finally{if(ocrBitmap!=bitmap)ocrBitmap.recycle();}
    String text=readingText(result,vertical);
    empty=text.trim().isEmpty();
-   books.appendScreen(bookId,screen,text);
+   duplicate=screen==resumeFirstScreen&&CaptureResume.sameText(resumeLastText,text);
+   if(!duplicate)books.appendScreen(bookId,screen,text,hash);
   }catch(Exception e){problem="文字認識・保存で停止: "+(e.getMessage()==null?e.getClass().getSimpleName():e.getMessage());}
   finally{bitmap.recycle();}
-  final String error=problem;final boolean wasEmpty=empty;
-  main.post(()->{pending--;if(wasEmpty)emptyCount++;if(id!=runId||!running)return;if(error!=null)requestStop(error);});
+  final String error=problem;final boolean wasEmpty=empty,wasDuplicate=duplicate;
+  main.post(()->{pending--;if(wasEmpty&&!wasDuplicate)emptyCount++;if(id!=runId||!running)return;if(wasDuplicate)status("前回保存した画面を読み飛ばして再開しました");if(error!=null)requestStop(error);});
  }
  private void advance(int id){
   if(cancel||finishing||id!=runId)return;
@@ -123,14 +130,14 @@ public class CaptureService extends AccessibilityService {
   if(vertical){List<Text.Line> ordered=new ArrayList<>();while(!lines.isEmpty()){Text.Line first=lines.remove(0);Rect box=first.getBoundingBox();List<Text.Line> col=new ArrayList<>();col.add(first);if(box!=null){float x=box.centerX();float tolerance=Math.max(8,box.width()*.75f);Iterator<Text.Line> it=lines.iterator();while(it.hasNext()){Text.Line l=it.next();Rect r=l.getBoundingBox();if(r!=null&&Math.abs(r.centerX()-x)<tolerance){col.add(l);it.remove();}}}col.sort(Comparator.comparingInt(l->l.getBoundingBox()==null?0:l.getBoundingBox().top));ordered.addAll(col);}lines=ordered;}
   StringBuilder out=new StringBuilder();for(Text.Line line:lines){if(out.length()>0)out.append('\n');out.append(line.getText());}return out.toString();
  }
- public void requestStop(String why){if(!running||finishing)return;cancel=true;stopReason=why;status(why+" 保存中…");if(!working)finish();}
+ public void requestStop(String why){if(!running||finishing)return;if(cancel){if(!working)finish();return;}cancel=true;stopReason=why;status(why+" 保存中…");if(!working)finish();}
  private void finish(){if(finishing||!running)return;finishing=true;hideOverlay();worker.execute(()->{
-  String error=null;try{books.finishCapture(bookId,stopReason.contains("同じ画面"));}catch(Exception e){error=e.getMessage();}
-  final String err=error;main.post(()->{
+  String error=null;int saved=0;try{books.finishCapture(bookId,stopReason.contains("同じ画面"));saved=books.countScreens(bookId);}catch(Exception e){error=e.getMessage();}
+  final String err=error;final int savedScreens=saved;main.post(()->{
    String s=stopReason+"\n";
    if(err!=null)s+="本棚への保存エラー: "+err;
-   else if(captured==0)s+="本文はありません。";
-   else s+=captured+"画面の本文を本棚に保存しました。章を確認して読書できます。";
+   else if(savedScreens==0)s+="本文はありません。";
+   else s+="合計"+savedScreens+"画面の本文を本棚に保存しました。章を確認して読書できます。";
    if(emptyCount>0)s+="\n文字を認識できない画面が"+emptyCount+"枚あります。";
    Store.status(this,s);running=false;finishing=false;working=false;
    Store.prefs(this).edit().putBoolean("running",false).remove("runningBookId").apply();cleanup();
@@ -138,6 +145,6 @@ public class CaptureService extends AccessibilityService {
  });}
  private void cleanup(){hideOverlay();if(wake!=null&&wake.isHeld())wake.release();wake=null;if(recognizer!=null){recognizer.close();recognizer=null;}if(books!=null){books.close();books=null;}}
  private void status(String text){Store.status(this,text);if(overlayText!=null)overlayText.setText(text);}
- private void showOverlay(){wm=(WindowManager)getSystemService(WINDOW_SERVICE);overlay=new LinearLayout(this);overlay.setOrientation(LinearLayout.HORIZONTAL);overlay.setPadding(14,8,10,8);overlay.setBackgroundColor(0xef122332);overlayText=new TextView(this);overlayText.setTextColor(Color.WHITE);overlayText.setTextSize(13);overlay.addView(overlayText,new LinearLayout.LayoutParams(0,-2,1));Button stop=new Button(this);stop.setText("停止");stop.setOnClickListener(v->requestStop("手動で停止しました。"));overlay.addView(stop);WindowManager.LayoutParams lp=new WindowManager.LayoutParams(-1,-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,PixelFormat.TRANSLUCENT);lp.gravity=Gravity.TOP;wm.addView(overlay,lp);}
+ private void showOverlay(){wm=(WindowManager)getSystemService(WINDOW_SERVICE);overlay=new LinearLayout(this);overlay.setOrientation(LinearLayout.HORIZONTAL);overlay.setPadding(14,8,10,8);overlay.setBackgroundColor(0xef122332);overlayText=new TextView(this);overlayText.setTextColor(Color.WHITE);overlayText.setTextSize(13);overlay.addView(overlayText,new LinearLayout.LayoutParams(0,-2,1));Button stop=new Button(this);stop.setText("一時停止");stop.setOnClickListener(v->requestStop("一時停止しました。"));overlay.addView(stop);WindowManager.LayoutParams lp=new WindowManager.LayoutParams(-1,-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,PixelFormat.TRANSLUCENT);lp.gravity=Gravity.TOP;wm.addView(overlay,lp);}
  private void hideOverlay(){if(overlay!=null&&wm!=null){try{wm.removeView(overlay);}catch(Exception ignored){}overlay=null;overlayText=null;}}
 }

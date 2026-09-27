@@ -28,17 +28,32 @@ final class BookStore extends SQLiteOpenHelper {
   final String title;
   Chapter(int startSeq,String title){this.startSeq=startSeq;this.title=title;}
  }
+ static final class CaptureCheckpoint {
+  final int lastScreen;
+  final String lastText;
+  final Long lastHash;
+  CaptureCheckpoint(int lastScreen,String lastText,Long lastHash){this.lastScreen=lastScreen;this.lastText=lastText;this.lastHash=lastHash;}
+ }
 
- BookStore(Context context){super(context,"shiori_books.db",null,1);}
+ BookStore(Context context){super(context,"shiori_books.db",null,2);}
  @Override public void onConfigure(SQLiteDatabase db){db.setForeignKeyConstraintsEnabled(true);}
  @Override public void onCreate(SQLiteDatabase db){
-  db.execSQL("CREATE TABLE books(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,read_seq INTEGER NOT NULL DEFAULT 0,read_offset INTEGER NOT NULL DEFAULT 0)");
+  db.execSQL("CREATE TABLE books(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,read_seq INTEGER NOT NULL DEFAULT 0,read_offset INTEGER NOT NULL DEFAULT 0,chapters_edited INTEGER NOT NULL DEFAULT 0,last_hash INTEGER)");
   db.execSQL("CREATE TABLE paragraphs(id INTEGER PRIMARY KEY AUTOINCREMENT,book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,seq INTEGER NOT NULL,screen INTEGER NOT NULL,text TEXT NOT NULL,UNIQUE(book_id,seq))");
   db.execSQL("CREATE TABLE chapters(id INTEGER PRIMARY KEY AUTOINCREMENT,book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,start_seq INTEGER NOT NULL,title TEXT NOT NULL,UNIQUE(book_id,start_seq))");
   db.execSQL("CREATE INDEX paragraph_book_seq ON paragraphs(book_id,seq)");
   db.execSQL("CREATE INDEX chapter_book_seq ON chapters(book_id,start_seq)");
  }
- @Override public void onUpgrade(SQLiteDatabase db,int oldVersion,int newVersion){throw new IllegalStateException("未対応の本棚データです");}
+ @Override public void onUpgrade(SQLiteDatabase db,int oldVersion,int newVersion){
+  if(oldVersion==1&&newVersion>=2){
+   db.execSQL("ALTER TABLE books ADD COLUMN chapters_edited INTEGER NOT NULL DEFAULT 0");
+   db.execSQL("ALTER TABLE books ADD COLUMN last_hash INTEGER");
+   // v0.3.0 did not record whether a chapter was edited; preserve its current boundaries.
+   db.execSQL("UPDATE books SET chapters_edited=1");
+   return;
+  }
+  throw new IllegalStateException("未対応の本棚データです");
+ }
 
  long createBook(String title){
   SQLiteDatabase db=getWritableDatabase();long now=System.currentTimeMillis();
@@ -50,7 +65,7 @@ final class BookStore extends SQLiteOpenHelper {
    db.setTransactionSuccessful();return id;
   }finally{db.endTransaction();}
  }
- void appendScreen(long bookId,int screen,String text){
+ void appendScreen(long bookId,int screen,String text,long hash){
   SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
   try{
    int seq=0;
@@ -64,22 +79,50 @@ final class BookStore extends SQLiteOpenHelper {
     db.insertOrThrow("paragraphs",null,p);saved=true;
    }
    if(!saved){ContentValues p=new ContentValues();p.put("book_id",bookId);p.put("seq",seq);p.put("screen",screen);p.put("text","［文字を認識できませんでした］");db.insertOrThrow("paragraphs",null,p);}
-   ContentValues b=new ContentValues();b.put("updated_at",System.currentTimeMillis());db.update("books",b,"id=?",new String[]{Long.toString(bookId)});
+   ContentValues b=new ContentValues();b.put("updated_at",System.currentTimeMillis());b.put("last_hash",hash);db.update("books",b,"id=?",new String[]{Long.toString(bookId)});
    db.setTransactionSuccessful();
   }finally{db.endTransaction();}
  }
  void finishCapture(long bookId,boolean complete){
-  List<Chapter> detected=ChapterDetector.detect(listParagraphs(bookId));
-  replaceChapters(bookId,detected);
+  if(!chaptersEdited(bookId))replaceChapters(bookId,ChapterDetector.detect(listParagraphs(bookId)));
   ContentValues b=new ContentValues();b.put("state",complete?"complete":"partial");b.put("updated_at",System.currentTimeMillis());
   getWritableDatabase().update("books",b,"id=?",new String[]{Long.toString(bookId)});
  }
  void markPartial(long bookId){
   Book book=getBook(bookId);
   if(book==null||!"capturing".equals(book.state))return;
-  replaceChapters(bookId,ChapterDetector.detect(listParagraphs(bookId)));
+  if(!chaptersEdited(bookId))replaceChapters(bookId,ChapterDetector.detect(listParagraphs(bookId)));
   ContentValues b=new ContentValues();b.put("state","partial");
   getWritableDatabase().update("books",b,"id=? AND state='capturing'",new String[]{Long.toString(bookId)});
+ }
+ private boolean chaptersEdited(long bookId){
+  try(Cursor c=getReadableDatabase().rawQuery("SELECT chapters_edited FROM books WHERE id=?",new String[]{Long.toString(bookId)})){
+   return c.moveToFirst()&&c.getInt(0)!=0;
+  }
+ }
+ CaptureCheckpoint resumeCapture(long bookId){
+  SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+  try{
+   try(Cursor state=db.rawQuery("SELECT state,last_hash FROM books WHERE id=?",new String[]{Long.toString(bookId)})){
+    if(!state.moveToFirst()||!"partial".equals(state.getString(0)))throw new IllegalStateException("この本は撮影を再開できません");
+    Long hash=state.isNull(1)?null:state.getLong(1);
+    int lastScreen=0;StringBuilder text=new StringBuilder();
+    try(Cursor screen=db.rawQuery("SELECT MAX(screen) FROM paragraphs WHERE book_id=?",new String[]{Long.toString(bookId)})){
+     if(screen.moveToFirst()&&!screen.isNull(0))lastScreen=screen.getInt(0);
+    }
+    if(lastScreen>0)try(Cursor lines=db.rawQuery("SELECT text FROM paragraphs WHERE book_id=? AND screen=? ORDER BY seq",new String[]{Long.toString(bookId),Integer.toString(lastScreen)})){
+     while(lines.moveToNext()){if(text.length()>0)text.append('\n');text.append(lines.getString(0));}
+    }
+    ContentValues values=new ContentValues();values.put("state","capturing");values.put("updated_at",System.currentTimeMillis());
+    db.update("books",values,"id=?",new String[]{Long.toString(bookId)});
+    db.setTransactionSuccessful();return new CaptureCheckpoint(lastScreen,text.toString(),hash);
+   }
+  }finally{db.endTransaction();}
+ }
+ int countScreens(long bookId){
+  try(Cursor c=getReadableDatabase().rawQuery("SELECT COUNT(DISTINCT screen) FROM paragraphs WHERE book_id=? AND screen>0",new String[]{Long.toString(bookId)})){
+   return c.moveToFirst()?c.getInt(0):0;
+  }
  }
  void renameBook(long bookId,String title){
   if(title.trim().isEmpty())throw new IllegalArgumentException("本の名前を入力してください");
@@ -122,6 +165,11 @@ final class BookStore extends SQLiteOpenHelper {
    for(Chapter ch:chapters){ContentValues v=new ContentValues();v.put("book_id",bookId);v.put("start_seq",ch.startSeq);v.put("title",ch.title.trim());db.insertOrThrow("chapters",null,v);}
    db.setTransactionSuccessful();
   }finally{db.endTransaction();}
+ }
+ void editChapters(long bookId,List<Chapter> chapters){
+  replaceChapters(bookId,chapters);
+  ContentValues values=new ContentValues();values.put("chapters_edited",1);
+  getWritableDatabase().update("books",values,"id=?",new String[]{Long.toString(bookId)});
  }
  void saveProgress(long bookId,int seq,int offset){
   ContentValues b=new ContentValues();b.put("read_seq",seq);b.put("read_offset",offset);b.put("updated_at",System.currentTimeMillis());

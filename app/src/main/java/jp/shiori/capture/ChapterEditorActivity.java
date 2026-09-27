@@ -62,7 +62,7 @@ public final class ChapterEditorActivity extends Activity {
  }
  private void save(List<BookStore.Chapter> chapters){
   chapters.sort(Comparator.comparingInt(c->c.startSeq));
-  try{db.replaceChapters(bookId,chapters);refresh();}catch(Exception e){message(e.getMessage()==null?"章を変更できませんでした":e.getMessage());}
+  try{db.editChapters(bookId,chapters);refresh();}catch(Exception e){message(e.getMessage()==null?"章を変更できませんでした":e.getMessage());}
  }
  private void chooseBoundary(IntConsumer selected){
   List<BookStore.Paragraph> paragraphs=db.listParagraphs(bookId);
