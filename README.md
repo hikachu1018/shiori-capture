@@ -19,6 +19,12 @@ Kindleの表示画面を端末内で撮影し、日本語OCRの本文を本棚�
 
 本棚の「書き出す」を押したときだけ、編集後の章立てを持つEPUBと、本全体を収めた単一のテキストPDFを作ります。書き出し先はAndroidのフォルダ選択画面で指定します。本棚のデータはアプリ専用領域にあるため、アンインストール前には必要な本をEPUBに書き出してください。
 
+## Galaxyへのインストール
+
+GitHub Releasesの [0.3.0](https://github.com/hikachu1018/shiori-capture/releases/tag/v0.3.0) から `shiori-capture-0.3.0.apk` をダウンロードし、端末の「ファイル」アプリから開いてインストールします。必要に応じて、使用したブラウザーに「不明なアプリのインストール」を一時的に許可します。公開したSHA-256とダウンロードしたAPKの値を照合できます。
+
+旧版と署名が異なり「更新できません」と表示された場合は、旧版の章付きEPUBを端末の共有フォルダへ書き出し、旧版をアンインストールしてから0.3.0をインストールしてください。アンインストールで旧版のアプリ専用データは消えるため、先にEPUBが端末の共有フォルダに残っていることを確認します。0.3.0を起動したら「旧版の章付きEPUBを取り込む」から戻せます。
+
 ## 開発とビルド
 
 JDK 17、Android SDK API 35とBuild Tools 35.0.0を使います。`local.properties` に `sdk.dir` を設定し、`./gradlew --no-daemon testDebugUnitTest assembleRelease` を実行します。Windowsは `gradlew.bat` を使います。GitHub Actionsも同じテストとビルドを行います。

@@ -27,7 +27,7 @@ public class CaptureService extends AccessibilityService {
  @Override protected void onServiceConnected(){instance=this;Store.status(this,"権限が有効です。本の名前を入力して撮影を開始できます。");}
  @Override public void onAccessibilityEvent(AccessibilityEvent e){}
  @Override public void onInterrupt(){requestStop("権限サービスが中断されました。");}
- @Override public void onDestroy(){requestStop("サービスが終了しました。保存済みファイルを確認してください。");instance=null;hideOverlay();super.onDestroy();}
+ @Override public void onDestroy(){requestStop("サービスが終了しました。保存済みの本文を本棚で確認してください。");instance=null;hideOverlay();super.onDestroy();}
  private boolean isKindle(){AccessibilityNodeInfo root=getRootInActiveWindow();if(root==null)return false;CharSequence p=root.getPackageName();String s=p==null?"":p.toString();return s.equals("com.amazon.kindlefs")||s.equals("com.amazon.kindle");}
  public void begin(long id,boolean v,boolean r,int seconds,int wait){
   if(running)return;
