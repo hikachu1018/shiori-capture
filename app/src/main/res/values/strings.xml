@@ -1,0 +1,9 @@
+<resources>
+ <string name="app_name">しおり Capture</string>
+ <string name="access_description">開始ボタンを押したときだけ、Kindleの表示画面を撮影し、指定方向へページを送ります。前面のアプリ名の確認に画面情報を使います。撮影画像と認識した本文は端末内で処理し、選んだ保存先へPDFを書き込みます。他のアプリが前面になったら撮影を停止します。権限はAndroidの設定でいつでも解除できます。</string>
+ <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+  <item name="android:fontFamily">sans</item><item name="android:colorAccent">#176F62</item>
+  <item name="android:windowLightStatusBar">true</item><item name="android:navigationBarColor">#F3F6F8</item>
+  <item name="android:windowActionModeOverlay">true</item><item name="android:windowLightNavigationBar">true</item>
+ </style>
+</resources>
