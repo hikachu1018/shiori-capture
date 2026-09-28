@@ -12,8 +12,11 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.View;
 import android.view.WindowInsets;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -25,13 +28,18 @@ import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import java.io.InputStream;
+import java.text.Collator;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 /** The bookshelf and capture setup are separate, focused views. */
 public final class MainActivity extends Activity {
  private final Handler handler=new Handler(Looper.getMainLooper());
  private final Runnable refresh=new Runnable(){@Override public void run(){refreshStatus();if(lastRunning&&!CaptureService.running)render();lastRunning=CaptureService.running;handler.postDelayed(this,1000);}};
- private BookStore db;private LinearLayout content,footer;private TextView status,access,destination;
+ private BookStore db;private LinearLayout content,footer,bookListContainer;private TextView status,access,destination,resultCount;
+ private List<BookStore.Book> libraryBooks=new ArrayList<>();private String searchQuery="";private int sortMode;
  private EditText title;private RadioGroup writing,direction;private Spinner countdown,interval;
  private Button libraryTab,captureTab,primaryAction;private boolean captureSelected,lastRunning;
  private String draftTitle="";private boolean draftVertical=true,draftRight=true;private int draftCountdown=0,draftInterval=1;
@@ -61,9 +69,11 @@ public final class MainActivity extends Activity {
   ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
   content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(20),dp(6),dp(20),dp(28));scroll.addView(content);
   footer=new LinearLayout(this);footer.setPadding(dp(20),dp(10),dp(20),dp(12));footer.setBackground(Ui.background(this,Ui.SURFACE,0,0));root.addView(footer);
-  captureSelected=state!=null&&state.getBoolean("captureSelected",false);render();
+  captureSelected=state!=null&&state.getBoolean("captureSelected",false);
+  if(state!=null){searchQuery=state.getString("searchQuery","");sortMode=state.getInt("sortMode",0);}
+  render();
  }
- @Override protected void onSaveInstanceState(Bundle out){saveDraft();out.putBoolean("captureSelected",captureSelected);super.onSaveInstanceState(out);}
+ @Override protected void onSaveInstanceState(Bundle out){saveDraft();out.putBoolean("captureSelected",captureSelected);out.putString("searchQuery",searchQuery);out.putInt("sortMode",sortMode);super.onSaveInstanceState(out);}
  private void saveDraft(){if(title==null)return;draftTitle=title.getText().toString();draftVertical=currentVertical();draftRight=currentRight();draftCountdown=countdown.getSelectedItemPosition();draftInterval=interval.getSelectedItemPosition();}
  private void selectTab(boolean capture){if(captureSelected==capture)return;saveDraft();captureSelected=capture;render();}
  private void updateTabs(){
@@ -71,7 +81,7 @@ public final class MainActivity extends Activity {
   captureTab.setBackground(Ui.background(this,captureSelected?Ui.GREEN_SOFT:Ui.BACKGROUND,13,0));
   libraryTab.setTextColor(captureSelected?Ui.MUTED:Ui.GREEN);captureTab.setTextColor(captureSelected?Ui.GREEN:Ui.MUTED);
  }
- private void render(){if(content==null)return;if(captureSelected)saveDraft();content.removeAllViews();footer.removeAllViews();status=null;access=null;destination=null;
+ private void render(){if(content==null)return;if(captureSelected)saveDraft();content.removeAllViews();footer.removeAllViews();status=null;access=null;destination=null;bookListContainer=null;resultCount=null;
   updateTabs();if(captureSelected)renderCapture();else renderLibrary();
   primaryAction=Ui.button(this,captureSelected?(CaptureService.running?"撮影を一時停止":"撮影を開始"):"新しい本を撮影",Ui.PRIMARY,()->{
    if(!captureSelected)selectTab(true);else if(CaptureService.running){if(CaptureService.instance!=null)CaptureService.instance.requestStop("一時停止しました。");}else beginCapture();
@@ -83,20 +93,55 @@ public final class MainActivity extends Activity {
  }
  private void renderLibrary(){
   content.addView(text("本棚",27,Ui.INK,true));content.addView(text("続きから読む本を選んでください。",14,Ui.MUTED,false),Ui.margins(this,5,0));addStatus();
-  List<BookStore.Book> list=db.listBooks();
-  if(list.isEmpty()){
+  libraryBooks=db.listBooks();
+  if(libraryBooks.isEmpty()){
    LinearLayout empty=Ui.card(this);empty.addView(text("本はまだありません",20,Ui.INK,true));
    empty.addView(text("まず本を撮影するか、旧版の章付きEPUBを取り込んでください。",14,Ui.MUTED,false),Ui.margins(this,8,0));
    content.addView(empty,Ui.margins(this,20,0));
-  }else for(BookStore.Book book:list)addBookCard(book);
+  }else{
+   LinearLayout filters=Ui.card(this);content.addView(filters,Ui.margins(this,16,0));
+   filters.addView(text("本を探す",15,Ui.INK,true));
+   EditText search=new EditText(this);search.setSingleLine(true);search.setTextSize(16);search.setHint("本の名前で検索");search.setText(searchQuery);
+   filters.addView(search,Ui.margins(this,4,0));
+   filters.addView(text("並べ替え",13,Ui.MUTED,true),Ui.margins(this,10,0));
+   Spinner sort=spinner(new String[]{"最近使った順","タイトル順","登録が新しい順","登録が古い順"},sortMode);
+   filters.addView(sort,new LinearLayout.LayoutParams(-1,dp(46)));
+   resultCount=text("",13,Ui.MUTED,false);content.addView(resultCount,Ui.margins(this,16,0));
+   bookListContainer=new LinearLayout(this);bookListContainer.setOrientation(LinearLayout.VERTICAL);content.addView(bookListContainer);
+   search.addTextChangedListener(new TextWatcher(){@Override public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+    @Override public void onTextChanged(CharSequence s,int start,int before,int count){searchQuery=s.toString();renderBookList();}
+    @Override public void afterTextChanged(Editable s){}
+   });
+   sort.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){@Override public void onItemSelected(AdapterView<?> parent,View view,int position,long id){sortMode=position;renderBookList();}
+    @Override public void onNothingSelected(AdapterView<?> parent){}
+   });
+   renderBookList();
+  }
   heading(content,"本棚の管理");
   LinearLayout tools=Ui.card(this);addButton(tools,"旧版の章付きEPUBを取り込む",Ui.SECONDARY,this::pickEpub,0);
   destination=text("",13,Ui.MUTED,false);tools.addView(destination,Ui.margins(this,16,0));
   addButton(tools,"書き出し先フォルダを選ぶ",Ui.PLAIN,this::pickFolder,9);content.addView(tools);
-  content.addView(text("試用版 0.3.3 · Android 11以降",12,Ui.MUTED,false),Ui.margins(this,18,0));
+  content.addView(text("試用版 0.3.4 · Android 11以降",12,Ui.MUTED,false),Ui.margins(this,18,0));
+ }
+ private void renderBookList(){
+  if(bookListContainer==null)return;
+  String query=searchQuery.trim().toLowerCase(Locale.ROOT);List<BookStore.Book> matches=new ArrayList<>();
+  for(BookStore.Book book:libraryBooks)if(book.title.toLowerCase(Locale.ROOT).contains(query))matches.add(book);
+  if(sortMode==1){Collator japanese=Collator.getInstance(Locale.JAPANESE);matches.sort((a,b)->{
+   int compared=japanese.compare(a.title,b.title);return compared!=0?compared:Long.compare(a.id,b.id);
+  });}
+  else if(sortMode==2)matches.sort(Comparator.comparingLong((BookStore.Book b)->b.createdAt).reversed());
+  else if(sortMode==3)matches.sort(Comparator.comparingLong(b->b.createdAt));
+  resultCount.setText(query.isEmpty()?libraryBooks.size()+"冊":matches.size()+" / "+libraryBooks.size()+"冊");
+  bookListContainer.removeAllViews();
+  if(matches.isEmpty()){
+   LinearLayout empty=Ui.card(this);empty.addView(text("見つかりませんでした",17,Ui.INK,true));
+   empty.addView(text("別の本の名前で検索してください。",13,Ui.MUTED,false),Ui.margins(this,7,0));
+   bookListContainer.addView(empty,Ui.margins(this,10,0));
+  }else for(BookStore.Book book:matches)addBookCard(book);
  }
  private void addBookCard(BookStore.Book book){
-  LinearLayout card=Ui.card(this);content.addView(card,Ui.margins(this,12,0));
+  LinearLayout card=Ui.card(this);bookListContainer.addView(card,Ui.margins(this,12,0));
   card.addView(text(book.title,20,Ui.INK,true));
   String badge="partial".equals(book.state)?"途中まで保存":"capturing".equals(book.state)?"撮影中":"読書できます";
   TextView state=text(badge,13,"partial".equals(book.state)?Ui.WARNING:Ui.GREEN,true);
@@ -118,7 +163,23 @@ public final class MainActivity extends Activity {
  private void showBookMenu(BookStore.Book book,View anchor){
   PopupMenu menu=new PopupMenu(this,anchor);menu.getMenu().add("章を編集").setOnMenuItemClickListener(item->{Intent i=new Intent(this,ChapterEditorActivity.class);i.putExtra("bookId",book.id);startActivity(i);return true;});
   menu.getMenu().add("EPUB・PDFを書き出す").setOnMenuItemClickListener(item->{exportBook(book.id);return true;});
-  menu.getMenu().add("本の名前を変更").setOnMenuItemClickListener(item->{rename(book);return true;});menu.show();
+  menu.getMenu().add("本の名前を変更").setOnMenuItemClickListener(item->{rename(book);return true;});
+  menu.getMenu().add("本を削除").setOnMenuItemClickListener(item->{confirmDelete(book);return true;});menu.show();
+ }
+ private void confirmDelete(BookStore.Book book){
+  new AlertDialog.Builder(this).setTitle("「"+book.title+"」を削除しますか？")
+   .setMessage("端末内の本文、章、読書位置を本棚から削除します。元に戻せません。書き出し済みのEPUB・PDFは残ります。")
+   .setNegativeButton("戻る",null).setPositiveButton("削除",(dialog,which)->{
+    Store.status(this,"「"+book.title+"」を削除しています…");refreshStatus();
+    new Thread(()->{String result;boolean removed=false;
+     try(BookStore workerDb=new BookStore(this)){workerDb.deleteBook(book.id);result="「"+book.title+"」を削除しました。";removed=true;}
+     catch(Exception e){result="削除できませんでした: "+e.getMessage();}
+     final String output=result;final boolean done=removed;runOnUiThread(()->{
+      if(done&&pendingExportBook==book.id)pendingExportBook=-1;
+      Store.status(this,output);render();if(!done)message(output);
+     });
+    },"shiori-delete-book").start();
+   }).show();
  }
  private RadioGroup choices(LinearLayout parent,String first,String second,boolean firstSelected){
   RadioGroup group=new RadioGroup(this);group.setOrientation(LinearLayout.HORIZONTAL);

@@ -170,6 +170,17 @@ final class BookStore extends SQLiteOpenHelper {
   ContentValues b=new ContentValues();b.put("title",title.trim());b.put("updated_at",System.currentTimeMillis());
   getWritableDatabase().update("books",b,"id=?",new String[]{Long.toString(bookId)});
  }
+ void deleteBook(long bookId){
+  SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+  try{
+   try(Cursor c=db.rawQuery("SELECT state FROM books WHERE id=?",new String[]{Long.toString(bookId)})){
+    if(!c.moveToFirst())throw new IllegalArgumentException("本が見つかりません");
+    if("capturing".equals(c.getString(0)))throw new IllegalStateException("撮影中の本は一時停止してから削除してください");
+   }
+   if(db.delete("books","id=?",new String[]{Long.toString(bookId)})!=1)throw new IllegalStateException("本を削除できませんでした");
+   db.setTransactionSuccessful();
+  }finally{db.endTransaction();}
+ }
  Book getBook(long id){
   try(Cursor c=getReadableDatabase().rawQuery("SELECT id,title,state,created_at,read_seq,read_offset FROM books WHERE id=?",new String[]{Long.toString(id)})){
    return c.moveToFirst()?new Book(c.getLong(0),c.getString(1),c.getString(2),c.getLong(3),c.getInt(4),c.getInt(5)):null;
