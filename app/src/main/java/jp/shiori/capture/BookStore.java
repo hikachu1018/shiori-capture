@@ -35,11 +35,11 @@ final class BookStore extends SQLiteOpenHelper {
   CaptureCheckpoint(int lastScreen,String lastText,Long lastHash){this.lastScreen=lastScreen;this.lastText=lastText;this.lastHash=lastHash;}
  }
 
- BookStore(Context context){super(context,"shiori_books.db",null,4);}
+ BookStore(Context context){super(context,"shiori_books.db",null,5);}
  @Override public void onConfigure(SQLiteDatabase db){db.setForeignKeyConstraintsEnabled(true);}
  @Override public void onCreate(SQLiteDatabase db){
   db.execSQL("CREATE TABLE books(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,read_seq INTEGER NOT NULL DEFAULT 0,read_offset INTEGER NOT NULL DEFAULT 0,chapters_edited INTEGER NOT NULL DEFAULT 0,last_hash INTEGER)");
-  db.execSQL("CREATE TABLE paragraphs(id INTEGER PRIMARY KEY AUTOINCREMENT,book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,seq INTEGER NOT NULL,screen INTEGER NOT NULL,text TEXT NOT NULL,UNIQUE(book_id,seq))");
+  db.execSQL("CREATE TABLE paragraphs(id INTEGER PRIMARY KEY AUTOINCREMENT,book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,seq INTEGER NOT NULL,screen INTEGER NOT NULL,text TEXT NOT NULL,hidden INTEGER NOT NULL DEFAULT 0,UNIQUE(book_id,seq))");
   db.execSQL("CREATE TABLE chapters(id INTEGER PRIMARY KEY AUTOINCREMENT,book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,start_seq INTEGER NOT NULL,title TEXT NOT NULL,UNIQUE(book_id,start_seq))");
   db.execSQL("CREATE INDEX paragraph_book_seq ON paragraphs(book_id,seq)");
   db.execSQL("CREATE INDEX chapter_book_seq ON chapters(book_id,start_seq)");
@@ -55,6 +55,13 @@ final class BookStore extends SQLiteOpenHelper {
   if(oldVersion==2&&newVersion>=3){removeSavedKindleProgress(db);oldVersion=3;}
   // Revisit v3 libraries: the old exact pattern missed partial and split OCR results.
   if(oldVersion==3&&newVersion>=4){removeSavedKindleProgress(db);oldVersion=4;}
+  if(oldVersion==4&&newVersion>=5){
+   db.execSQL("ALTER TABLE paragraphs ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0");
+   try(Cursor c=db.rawQuery("SELECT id FROM books WHERE chapters_edited=0 AND state!='capturing'",null)){
+    while(c.moveToNext())rebuildInDatabase(db,c.getLong(0));
+   }
+   oldVersion=5;
+  }
   if(oldVersion!=newVersion)throw new IllegalStateException("未対応の本棚データです");
  }
 
@@ -127,14 +134,14 @@ final class BookStore extends SQLiteOpenHelper {
   }finally{db.endTransaction();}
  }
  void finishCapture(long bookId,boolean complete){
-  if(!chaptersEdited(bookId))replaceChapters(bookId,ChapterDetector.detect(listParagraphs(bookId)));
+  if(!chaptersEdited(bookId))rebuildChapters(bookId,false);
   ContentValues b=new ContentValues();b.put("state",complete?"complete":"partial");b.put("updated_at",System.currentTimeMillis());
   getWritableDatabase().update("books",b,"id=?",new String[]{Long.toString(bookId)});
  }
  void markPartial(long bookId){
   Book book=getBook(bookId);
   if(book==null||!"capturing".equals(book.state))return;
-  if(!chaptersEdited(bookId))replaceChapters(bookId,ChapterDetector.detect(listParagraphs(bookId)));
+  if(!chaptersEdited(bookId))rebuildChapters(bookId,false);
   ContentValues b=new ContentValues();b.put("state","partial");
   getWritableDatabase().update("books",b,"id=? AND state='capturing'",new String[]{Long.toString(bookId)});
  }
@@ -197,10 +204,46 @@ final class BookStore extends SQLiteOpenHelper {
  }
  List<Paragraph> listParagraphs(long bookId){
   List<Paragraph> out=new ArrayList<>();
+  try(Cursor c=getReadableDatabase().rawQuery("SELECT seq,screen,text FROM paragraphs WHERE book_id=? AND hidden=0 ORDER BY seq",new String[]{Long.toString(bookId)})){
+   while(c.moveToNext())out.add(new Paragraph(c.getInt(0),c.getInt(1),c.getString(2)));
+  }
+  return out;
+ }
+ List<Paragraph> listAllParagraphs(long bookId){
+  List<Paragraph> out=new ArrayList<>();
   try(Cursor c=getReadableDatabase().rawQuery("SELECT seq,screen,text FROM paragraphs WHERE book_id=? ORDER BY seq",new String[]{Long.toString(bookId)})){
    while(c.moveToNext())out.add(new Paragraph(c.getInt(0),c.getInt(1),c.getString(2)));
   }
   return out;
+ }
+ private static ChapterDetector.Analysis rebuildInDatabase(SQLiteDatabase db,long bookId){
+  List<Paragraph> all=new ArrayList<>();
+  try(Cursor c=db.rawQuery("SELECT seq,screen,text FROM paragraphs WHERE book_id=? ORDER BY seq",new String[]{Long.toString(bookId)})){
+   while(c.moveToNext())all.add(new Paragraph(c.getInt(0),c.getInt(1),c.getString(2)));
+  }
+  // Imported EPUB chapters already carry their own boundaries and have screen 0.
+  if(all.isEmpty()||all.get(0).screen==0)return null;
+  ChapterDetector.Analysis result=ChapterDetector.analyze(all);
+  // Keep the current book untouched when a contents screen has no matching body start.
+  if(result.tocCount>0&&result.matchedCount==0)return result;
+  db.execSQL("UPDATE paragraphs SET hidden=0 WHERE book_id=?",new Object[]{bookId});
+  ContentValues hidden=new ContentValues();hidden.put("hidden",1);
+  for(int seq:result.hiddenSeqs)db.update("paragraphs",hidden,"book_id=? AND seq=?",new String[]{Long.toString(bookId),Integer.toString(seq)});
+  db.delete("chapters","book_id=?",new String[]{Long.toString(bookId)});
+  for(Chapter ch:result.chapters){ContentValues value=new ContentValues();value.put("book_id",bookId);value.put("start_seq",ch.startSeq);value.put("title",ch.title);db.insertOrThrow("chapters",null,value);}
+  return result;
+ }
+ ChapterDetector.Analysis rebuildChapters(long bookId,boolean overrideManual){
+  SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+  try{
+   try(Cursor c=db.rawQuery("SELECT chapters_edited FROM books WHERE id=?",new String[]{Long.toString(bookId)})){
+    if(!c.moveToFirst())throw new IllegalArgumentException("本が見つかりません");
+    if(c.getInt(0)!=0&&!overrideManual)return null;
+   }
+   ChapterDetector.Analysis result=rebuildInDatabase(db,bookId);
+   if(overrideManual&&result!=null&&(result.tocCount==0||result.matchedCount>0)){ContentValues b=new ContentValues();b.put("chapters_edited",0);db.update("books",b,"id=?",new String[]{Long.toString(bookId)});}
+   db.setTransactionSuccessful();return result;
+  }finally{db.endTransaction();}
  }
  List<Chapter> listChapters(long bookId){
   List<Chapter> out=new ArrayList<>();

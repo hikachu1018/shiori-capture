@@ -37,6 +37,8 @@ public final class ChapterEditorActivity extends Activity {
   content.addView(text("章を編集",27,Ui.INK,true));
   content.addView(text(book.title,15,Ui.MUTED,false),Ui.margins(this,4,0));
   content.addView(text("章名と読み始める段落を確認できます。変更は読書画面にも反映されます。",14,Ui.MUTED,false),Ui.margins(this,14,0));
+  Button redetect=Ui.button(this,"目次から章を再検出",Ui.SECONDARY,this::confirmRedetect);content.addView(redetect,Ui.margins(this,12,0));
+  Button fromToc=Ui.button(this,"目次の項目から章を追加",Ui.PLAIN,this::chooseTocTitle);content.addView(fromToc,Ui.margins(this,8,0));
   List<BookStore.Chapter> chapters=db.listChapters(bookId);
   List<BookStore.Paragraph> paragraphs=db.listParagraphs(bookId);
   for(int i=0;i<chapters.size();i++)addChapterCard(i,chapters.get(i),paragraphs);
@@ -62,6 +64,32 @@ public final class ChapterEditorActivity extends Activity {
   card.addView(edit,Ui.margins(this,14,0));
  }
  private interface TitleAction{void apply(String title);}
+ private void chooseTocTitle(){
+  ChapterDetector.Analysis analysis=ChapterDetector.analyze(db.listAllParagraphs(bookId));
+  if(analysis.tocTitles.isEmpty()){message("撮影した本文から目次の項目を見つけられませんでした。");return;}
+  String[] titles=analysis.tocTitles.toArray(new String[0]);
+  new AlertDialog.Builder(this).setTitle("目次の章名を選ぶ").setItems(titles,(dialog,which)->chooseBoundary(seq->{
+   List<BookStore.Chapter> all=db.listChapters(bookId);List<BookStore.Paragraph> visible=db.listParagraphs(bookId);
+   int first=visible.isEmpty()?-1:visible.get(0).seq;
+   if(seq==first&&all.size()==1&&"冒頭".equals(all.get(0).title))all.set(0,new BookStore.Chapter(0,titles[which]));
+   else all.add(new BookStore.Chapter(seq,titles[which]));
+   save(all);
+  })).setNegativeButton("戻る",null).show();
+ }
+ private void confirmRedetect(){
+  new AlertDialog.Builder(this).setTitle("章を再検出しますか？")
+   .setMessage("撮影した目次と本文の見出しを照合します。手動で編集した章立ては一致した目次の章立てに置き換わり、目次と表紙の画面は読書本文から除外されます。")
+   .setNegativeButton("戻る",null).setPositiveButton("再検出",(dialog,which)->new Thread(()->{
+    String result;boolean updated=false;
+    try(BookStore worker=new BookStore(this)){
+     ChapterDetector.Analysis analysis=worker.rebuildChapters(bookId,true);
+     if(analysis==null)result="この本に再検出できる撮影本文がありません。";
+     else if(analysis.tocCount>0&&analysis.matchedCount==0)result="目次は見つかりましたが、本文の章冒頭との一致がありませんでした。章立ては変更していません。";
+     else {result=analysis.tocCount>0?"章立てを更新しました。目次"+analysis.tocCount+"項目のうち本文で"+analysis.matchedCount+"章を確認しました。":"目次を検出できなかったため、本文の見出しから章立てを更新しました。";updated=true;}
+    }catch(Exception e){result="再検出できませんでした: "+e.getMessage();}
+    final String output=result;final boolean changed=updated;runOnUiThread(()->{if(changed)refresh();message(output);});
+   },"shiori-redetect-chapters").start()).show();
+ }
  private void askTitle(String current,TitleAction action){
   EditText input=new EditText(this);input.setSingleLine(true);input.setText(current);input.setSelectAllOnFocus(true);
   new AlertDialog.Builder(this).setTitle("章の名前").setView(input).setPositiveButton("保存",(d,w)->{

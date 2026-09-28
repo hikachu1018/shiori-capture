@@ -122,7 +122,7 @@ public final class MainActivity extends Activity {
   LinearLayout tools=Ui.card(this);addButton(tools,"旧版の章付きEPUBを取り込む",Ui.SECONDARY,this::pickEpub,0);
   destination=text("",13,Ui.MUTED,false);tools.addView(destination,Ui.margins(this,16,0));
   addButton(tools,"書き出し先フォルダを選ぶ",Ui.PLAIN,this::pickFolder,9);content.addView(tools);
-  content.addView(text("試用版 0.3.4 · Android 11以降",12,Ui.MUTED,false),Ui.margins(this,18,0));
+  content.addView(text("試用版 0.3.6 · Android 11以降",12,Ui.MUTED,false),Ui.margins(this,18,0));
  }
  private void renderBookList(){
   if(bookListContainer==null)return;
