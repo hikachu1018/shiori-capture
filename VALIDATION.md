@@ -1,4 +1,12 @@
-# 検証結果（0.3.1）
+# 検証結果
+
+## 0.3.2 UI改善版
+
+[GitHub Actionsのビルド](https://github.com/hikachu1018/shiori-capture/actions/runs/36374299993)で単体テスト、全機種向けとGalaxy向けのクリーンビルドが成功しました。Android 16エミュレーターにデバッグ版を入れ、本棚、撮影設定、読書、章編集の画面表示と画面遷移を確認しました。撮影オーバーレイは実機のKindle上では未確認です。
+
+署名済み0.3.2のAPKはアプリID `jp.shiori.capture`、versionCode 5、前版と同じ署名証明書であることを確認しました。Galaxy向けAPKは約22MBです。[GitHub Rawの直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.3.2-galaxy-arm64.apk)から全量を取得し、公開前のAPKとSHA-256が一致しました。Galaxy実機での0.3.2のダウンロードとインストールは未確認です。
+
+## 0.3.1 の検証履歴
 
 ## 自動検証
 
