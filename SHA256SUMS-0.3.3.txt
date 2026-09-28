@@ -1,0 +1,2 @@
+b6aadbda4f737538e24ed790a9556a4292999568126dca9ee3094ab92441153f  shiori-capture-0.3.3-galaxy-arm64.apk
+57b0e64b01632d6591fd2acab52a61b297064a90c86b5c2b38e31d5ea6e90ffa  shiori-capture-0.3.3.apk
