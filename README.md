@@ -1,6 +1,8 @@
-# しおり Capture 0.3.1
+# しおり Capture 0.3.2
 
 Kindleの表示画面を端末内で撮影し、日本語OCRの本文を本棚へ保存するAndroidアプリです。オフラインで動作し、撮影した本はアプリ内で章ごとにRSVP読書できます。Android 11以降が必要です。
+
+0.3.2では本棚と撮影設定をタブに分け、読書画面の操作と進捗表示、章編集画面の配置を見直しました。撮影や読書のデータ形式は0.3.1から変えていません。
 
 ## 使い方
 
@@ -17,17 +19,17 @@ Kindleの表示画面を端末内で撮影し、日本語OCRの本文を本棚�
 
 旧版0.2の「章付きEPUB」を本棚に取り込めます。旧版のPDFや任意のEPUBには対応しません。
 
-本棚の「書き出す」を押したときだけ、編集後の章立てを持つEPUBと、本全体を収めた単一のテキストPDFを作ります。書き出し先はAndroidのフォルダ選択画面で指定します。本棚のデータはアプリ専用領域にあるため、アンインストール前には必要な本をEPUBに書き出してください。
+本棚の本カードで「その他」→「EPUB・PDFを書き出す」を選んだときだけ、編集後の章立てを持つEPUBと、本全体を収めた単一のテキストPDFを作ります。書き出し先はAndroidのフォルダ選択画面で指定します。本棚のデータはアプリ専用領域にあるため、アンインストール前には必要な本をEPUBに書き出してください。
 
 ## Galaxyへのインストール
 
-Galaxyの64ビットARM端末向け小容量APK（約22MB）は、[GitHub Raw直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.3.1-galaxy-arm64.apk)からダウンロードできます。Galaxyでこのリンクから直接保存できたことを確認しました。保存したAPKは「マイファイル」から開いてインストールします。必要に応じて、使用したアプリに「不明なアプリのインストール」を許可します。
+Galaxyの64ビットARM端末向け小容量APK（約22MB）は、[GitHub Raw直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.3.2-galaxy-arm64.apk)からダウンロードできます。0.3.1ではGalaxyからこの配布経路で保存できたことを確認しました。保存したAPKは「マイファイル」から開いてインストールします。必要に応じて、使用したアプリに「不明なアプリのインストール」を許可します。
 
-GitHub ReleasesのAPK単体はGalaxyで保存が完了しなかったため、[GitHub Pages配布ページ](https://hikachu1018.github.io/shiori-capture/)と別経路の直接リンクを用意しました。公開URLから取得したファイルのSHA-256一致を確認済みです。直接保存できない場合は[ReleaseのZIP版](https://github.com/hikachu1018/shiori-capture/releases/download/v0.3.1/shiori-capture-0.3.1-zip-download.zip)を「マイファイル」で展開してください。
+GitHub ReleasesのAPK単体はGalaxyで保存が完了しなかったため、[GitHub Pages配布ページ](https://hikachu1018.github.io/shiori-capture/)と別経路の直接リンクを用意しました。直接保存できない場合は[ReleaseのZIP版](https://github.com/hikachu1018/shiori-capture/releases/download/v0.3.2/shiori-capture-0.3.2-zip-download.zip)を「マイファイル」で展開してください。
 
-端末のCPUが分からない場合は、[全機種向けAPKの別経路直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.3.1-universal.apk)を使えます。
+端末のCPUが分からない場合は、[全機種向けAPKの別経路直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.3.2-universal.apk)を使えます。
 
-0.3.0からは同じ署名鍵で上書き更新でき、本棚のデータも引き継ぎます。さらに古い試用版と署名が異なり「更新できません」と表示された場合は、旧版の章付きEPUBを端末の共有フォルダへ書き出し、旧版をアンインストールしてから0.3.1をインストールしてください。アンインストールで旧版のアプリ専用データは消えるため、先にEPUBが端末の共有フォルダに残っていることを確認します。
+0.3.0からは同じ署名鍵で上書き更新でき、本棚のデータも引き継ぎます。さらに古い試用版と署名が異なり「更新できません」と表示された場合は、旧版の章付きEPUBを端末の共有フォルダへ書き出し、旧版をアンインストールしてから0.3.2をインストールしてください。アンインストールで旧版のアプリ専用データは消えるため、先にEPUBが端末の共有フォルダに残っていることを確認します。
 
 ## 開発とビルド
 

@@ -2,13 +2,13 @@ package jp.shiori.capture;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.os.Bundle;
 import android.graphics.Insets;
-import android.view.View;
+import android.os.Bundle;
 import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import java.util.ArrayList;
@@ -23,63 +23,63 @@ public final class ChapterEditorActivity extends Activity {
   Group(String name){this.name=name;}
  }
  private BookStore db;private long bookId;private LinearLayout content;
- private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
- private TextView text(String value,int size){TextView v=new TextView(this);v.setText(value);v.setTextColor(0xff173249);v.setTextSize(size);v.setPadding(0,dp(8),0,dp(8));return v;}
- private Button button(String value,Runnable action){Button b=new Button(this);b.setText(value);b.setAllCaps(false);b.setOnClickListener(v->action.run());b.setMinHeight(dp(48));return b;}
+ private int dp(int n){return Ui.dp(this,n);}
+ private TextView text(String value,int size,int color,boolean bold){return Ui.text(this,value,size,color,bold);}
  private void message(String value){new AlertDialog.Builder(this).setMessage(value).setPositiveButton("OK",null).show();}
  @Override public void onCreate(Bundle state){super.onCreate(state);bookId=getIntent().getLongExtra("bookId",-1);db=new BookStore(this);if(db.getBook(bookId)==null){finish();return;}refresh();}
  private void refresh(){
-  ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(0xfff3f6f8);
-  scroll.setOnApplyWindowInsetsListener((v,in)->{Insets i=in.getInsets(WindowInsets.Type.systemBars());v.setPadding(i.left,i.top,i.right,i.bottom);return in;});
-  content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(20),dp(24),dp(20),dp(32));scroll.addView(content);setContentView(scroll);
-  BookStore.Book book=db.getBook(bookId);content.addView(text(book.title+" の章",23));
-  content.addView(text("章の開始段落を選び直せます。変更は本棚と読書画面にすぐ反映されます。",14));
-  content.addView(button("章を追加",()->chooseBoundary(seq->askTitle("新しい章",name->{
-   List<BookStore.Chapter> all=db.listChapters(bookId);all.add(new BookStore.Chapter(seq,name));save(all);
-  }))));
+  LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(Ui.BACKGROUND);setContentView(root);
+  root.setOnApplyWindowInsetsListener((v,in)->{Insets i=in.getInsets(WindowInsets.Type.systemBars());v.setPadding(i.left,i.top,i.right,i.bottom);return in;});
+  ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+  content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(20),dp(22),dp(20),dp(32));scroll.addView(content);
+  BookStore.Book book=db.getBook(bookId);
+  Button back=Ui.button(this,"本棚へ戻る",Ui.PLAIN,this::finish);content.addView(back,new LinearLayout.LayoutParams(-1,dp(48)));
+  content.addView(text("章を編集",27,Ui.INK,true));
+  content.addView(text(book.title,15,Ui.MUTED,false),Ui.margins(this,4,0));
+  content.addView(text("章名と読み始める段落を確認できます。変更は読書画面にも反映されます。",14,Ui.MUTED,false),Ui.margins(this,14,0));
   List<BookStore.Chapter> chapters=db.listChapters(bookId);
-  for(int i=0;i<chapters.size();i++){
-   final int index=i;BookStore.Chapter ch=chapters.get(i);
-   content.addView(text((i+1)+". "+ch.title+"  （段落 "+(ch.startSeq+1)+"から）",17));
-   LinearLayout row=new LinearLayout(this);
-   row.addView(button("名前",()->askTitle(ch.title,name->replace(index,new BookStore.Chapter(ch.startSeq,name)))),new LinearLayout.LayoutParams(0,dp(50),1));
-   if(i>0){
-    row.addView(button("位置",()->chooseBoundary(seq->replace(index,new BookStore.Chapter(seq,ch.title)))),new LinearLayout.LayoutParams(0,dp(50),1));
-    row.addView(button("統合",()->new AlertDialog.Builder(this).setMessage("「"+ch.title+"」の境界を削除して前の章にまとめますか？").setPositiveButton("統合",(d,w)->{List<BookStore.Chapter> all=db.listChapters(bookId);all.remove(index);save(all);}).setNegativeButton("戻る",null).show()),new LinearLayout.LayoutParams(0,dp(50),1));
-   }
-   content.addView(row);
-  }
+  List<BookStore.Paragraph> paragraphs=db.listParagraphs(bookId);
+  for(int i=0;i<chapters.size();i++)addChapterCard(i,chapters.get(i),paragraphs);
+  Button add=Ui.button(this,"章を追加",Ui.PRIMARY,()->chooseBoundary(seq->askTitle("新しい章",name->{
+   List<BookStore.Chapter> all=db.listChapters(bookId);all.add(new BookStore.Chapter(seq,name));save(all);
+  })));
+  LinearLayout bottom=new LinearLayout(this);bottom.setPadding(dp(20),dp(10),dp(20),dp(12));bottom.setBackground(Ui.background(this,Ui.SURFACE,0,0));
+  bottom.addView(add,new LinearLayout.LayoutParams(-1,dp(54)));root.addView(bottom);
+ }
+ private void addChapterCard(int index,BookStore.Chapter chapter,List<BookStore.Paragraph> paragraphs){
+  LinearLayout card=Ui.card(this);content.addView(card,Ui.margins(this,16,0));
+  card.addView(text("章 "+(index+1),13,Ui.GREEN,true));
+  card.addView(text(chapter.title,19,Ui.INK,true),Ui.margins(this,5,0));
+  String excerpt="";for(BookStore.Paragraph p:paragraphs)if(p.seq>=chapter.startSeq){excerpt=shortText(p.text,54);break;}
+  card.addView(text("段落 "+(chapter.startSeq+1)+" から · "+excerpt,13,Ui.MUTED,false),Ui.margins(this,8,0));
+  Button edit=Ui.button(this,"章名と開始位置を編集",Ui.SECONDARY,()->{});
+  edit.setOnClickListener(v->{PopupMenu menu=new PopupMenu(this,edit);
+   menu.getMenu().add("章名を変更").setOnMenuItemClickListener(item->{askTitle(chapter.title,name->replace(index,new BookStore.Chapter(chapter.startSeq,name)));return true;});
+   if(index>0){menu.getMenu().add("開始位置を変更").setOnMenuItemClickListener(item->{chooseBoundary(seq->replace(index,new BookStore.Chapter(seq,chapter.title)));return true;});
+    menu.getMenu().add("前の章と統合").setOnMenuItemClickListener(item->{new AlertDialog.Builder(this).setMessage("「"+chapter.title+"」を前の章に統合しますか？")
+     .setPositiveButton("統合",(d,w)->{List<BookStore.Chapter> all=db.listChapters(bookId);all.remove(index);save(all);}).setNegativeButton("戻る",null).show();return true;});}
+   menu.show();});
+  card.addView(edit,Ui.margins(this,14,0));
  }
  private interface TitleAction{void apply(String title);}
  private void askTitle(String current,TitleAction action){
   EditText input=new EditText(this);input.setSingleLine(true);input.setText(current);input.setSelectAllOnFocus(true);
   new AlertDialog.Builder(this).setTitle("章の名前").setView(input).setPositiveButton("保存",(d,w)->{
-   String title=input.getText().toString().trim();if(title.isEmpty()){message("章の名前を入力してください");return;}action.apply(title);
+   String name=input.getText().toString().trim();if(name.isEmpty()){message("章の名前を入力してください");return;}action.apply(name);
   }).setNegativeButton("戻る",null).show();
  }
- private void replace(int index,BookStore.Chapter replacement){
-  List<BookStore.Chapter> all=db.listChapters(bookId);all.set(index,replacement);save(all);
- }
- private void save(List<BookStore.Chapter> chapters){
-  chapters.sort(Comparator.comparingInt(c->c.startSeq));
-  try{db.editChapters(bookId,chapters);refresh();}catch(Exception e){message(e.getMessage()==null?"章を変更できませんでした":e.getMessage());}
- }
+ private void replace(int index,BookStore.Chapter replacement){List<BookStore.Chapter> all=db.listChapters(bookId);all.set(index,replacement);save(all);}
+ private void save(List<BookStore.Chapter> chapters){chapters.sort(Comparator.comparingInt(c->c.startSeq));try{db.editChapters(bookId,chapters);refresh();}
+  catch(Exception e){message(e.getMessage()==null?"章を変更できませんでした":e.getMessage());}}
  private void chooseBoundary(IntConsumer selected){
-  List<BookStore.Paragraph> paragraphs=db.listParagraphs(bookId);
-  if(paragraphs.size()<2){message("章の境界にできる段落がありません");return;}
+  List<BookStore.Paragraph> paragraphs=db.listParagraphs(bookId);if(paragraphs.size()<2){message("章の境界にできる段落がありません");return;}
   List<Group> groups=new ArrayList<>();String previous="";
-  for(int i=0;i<paragraphs.size();i++){
-   BookStore.Paragraph p=paragraphs.get(i);
-   String key=p.screen>0?"画面 "+p.screen:"段落 "+(i/25+1)+"〜";
-   if(!key.equals(previous)){groups.add(new Group(key));previous=key;}
-   groups.get(groups.size()-1).paragraphs.add(p);
-  }
-  String[] names=new String[groups.size()];
-  for(int i=0;i<groups.size();i++)names[i]=groups.get(i).name+"  "+shortText(groups.get(i).paragraphs.get(0).text,22);
+  for(int i=0;i<paragraphs.size();i++){BookStore.Paragraph p=paragraphs.get(i);String key=p.screen>0?"画面 "+p.screen:"段落 "+(i/25+1)+"〜";
+   if(!key.equals(previous)){groups.add(new Group(key));previous=key;}groups.get(groups.size()-1).paragraphs.add(p);}
+  String[] names=new String[groups.size()];for(int i=0;i<groups.size();i++)names[i]=groups.get(i).name+"  "+shortText(groups.get(i).paragraphs.get(0).text,22);
   new AlertDialog.Builder(this).setTitle("開始画面を選ぶ").setItems(names,(d,which)->chooseParagraph(groups.get(which),selected)).setNegativeButton("戻る",null).show();
  }
- private void chooseParagraph(Group group,IntConsumer selected){
-  String[] names=new String[group.paragraphs.size()];
+ private void chooseParagraph(Group group,IntConsumer selected){String[] names=new String[group.paragraphs.size()];
   for(int i=0;i<names.length;i++)names[i]=(group.paragraphs.get(i).seq+1)+": "+shortText(group.paragraphs.get(i).text,65);
   new AlertDialog.Builder(this).setTitle("章の開始段落を選ぶ").setItems(names,(d,which)->selected.accept(group.paragraphs.get(which).seq)).setNegativeButton("戻る",null).show();
  }

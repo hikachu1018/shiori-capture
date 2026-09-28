@@ -145,6 +145,18 @@ public class CaptureService extends AccessibilityService {
  });}
  private void cleanup(){hideOverlay();if(wake!=null&&wake.isHeld())wake.release();wake=null;if(recognizer!=null){recognizer.close();recognizer=null;}if(books!=null){books.close();books=null;}}
  private void status(String text){Store.status(this,text);if(overlayText!=null)overlayText.setText(text);}
- private void showOverlay(){wm=(WindowManager)getSystemService(WINDOW_SERVICE);overlay=new LinearLayout(this);overlay.setOrientation(LinearLayout.HORIZONTAL);overlay.setPadding(14,8,10,8);overlay.setBackgroundColor(0xef122332);overlayText=new TextView(this);overlayText.setTextColor(Color.WHITE);overlayText.setTextSize(13);overlay.addView(overlayText,new LinearLayout.LayoutParams(0,-2,1));Button stop=new Button(this);stop.setText("一時停止");stop.setOnClickListener(v->requestStop("一時停止しました。"));overlay.addView(stop);WindowManager.LayoutParams lp=new WindowManager.LayoutParams(-1,-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,PixelFormat.TRANSLUCENT);lp.gravity=Gravity.TOP;wm.addView(overlay,lp);}
+ private void showOverlay(){
+  wm=(WindowManager)getSystemService(WINDOW_SERVICE);
+  overlay=new LinearLayout(this);overlay.setOrientation(LinearLayout.HORIZONTAL);overlay.setGravity(Gravity.CENTER_VERTICAL);
+  overlay.setPadding(Ui.dp(this,14),Ui.dp(this,7),Ui.dp(this,8),Ui.dp(this,7));
+  overlay.setBackground(Ui.background(this,0xf518313a,16,0));
+  overlayText=new TextView(this);overlayText.setTextColor(Color.WHITE);overlayText.setTextSize(13);overlayText.setMaxLines(2);
+  overlay.addView(overlayText,new LinearLayout.LayoutParams(0,-2,1));
+  Button stop=Ui.button(this,"一時停止",Ui.PRIMARY,()->requestStop("一時停止しました。"));
+  overlay.addView(stop,new LinearLayout.LayoutParams(Ui.dp(this,112),Ui.dp(this,48)));
+  WindowManager.LayoutParams lp=new WindowManager.LayoutParams(-1,-2,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+   WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,PixelFormat.TRANSLUCENT);
+  lp.gravity=Gravity.TOP;lp.x=Ui.dp(this,8);lp.y=Ui.dp(this,8);wm.addView(overlay,lp);
+ }
  private void hideOverlay(){if(overlay!=null&&wm!=null){try{wm.removeView(overlay);}catch(Exception ignored){}overlay=null;overlayText=null;}}
 }
