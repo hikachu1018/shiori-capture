@@ -50,7 +50,7 @@ final class BookStore extends SQLiteOpenHelper {
  }
 
  private final File imageDirectory;
- BookStore(Context context){super(context,"shiori_books.db",null,6);imageDirectory=new File(context.getFilesDir(),"page-images");}
+ BookStore(Context context){super(context,"shiori_books.db",null,7);imageDirectory=new File(context.getFilesDir(),"page-images");}
  @Override public void onConfigure(SQLiteDatabase db){db.setForeignKeyConstraintsEnabled(true);}
  @Override public void onCreate(SQLiteDatabase db){
   db.execSQL("CREATE TABLE books(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,read_seq INTEGER NOT NULL DEFAULT 0,read_offset INTEGER NOT NULL DEFAULT 0,chapters_edited INTEGER NOT NULL DEFAULT 0,last_hash INTEGER,auto_title INTEGER NOT NULL DEFAULT 0)");
@@ -61,7 +61,7 @@ final class BookStore extends SQLiteOpenHelper {
   db.execSQL("CREATE INDEX chapter_book_seq ON chapters(book_id,start_seq)");
  }
  @Override public void onUpgrade(SQLiteDatabase db,int oldVersion,int newVersion){
-  boolean needsChapterRebuild=oldVersion<6;
+  boolean needsChapterRebuild=oldVersion<7;
   if(oldVersion==1&&newVersion>=2){
    db.execSQL("ALTER TABLE books ADD COLUMN chapters_edited INTEGER NOT NULL DEFAULT 0");
    db.execSQL("ALTER TABLE books ADD COLUMN last_hash INTEGER");
@@ -81,7 +81,8 @@ final class BookStore extends SQLiteOpenHelper {
    db.execSQL("CREATE TABLE page_images(book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,screen INTEGER NOT NULL,start_seq INTEGER NOT NULL,kind TEXT NOT NULL,PRIMARY KEY(book_id,screen))");
    oldVersion=6;
   }
-  if(needsChapterRebuild&&oldVersion>=6)try(Cursor c=db.rawQuery("SELECT id,chapters_edited FROM books WHERE state!='capturing'",null)){
+  if(oldVersion==6&&newVersion>=7)oldVersion=7;
+  if(needsChapterRebuild&&oldVersion>=7)try(Cursor c=db.rawQuery("SELECT id,chapters_edited FROM books WHERE state!='capturing'",null)){
    while(c.moveToNext())rebuildInDatabase(db,c.getLong(0),c.getInt(1)!=0);
   }
   if(oldVersion!=newVersion)throw new IllegalStateException("未対応の本棚データです");
@@ -281,6 +282,17 @@ final class BookStore extends SQLiteOpenHelper {
   Set<Integer> imageScreens=new HashSet<>();
   try(Cursor c=db.rawQuery("SELECT screen FROM page_images WHERE book_id=?",new String[]{Long.toString(bookId)})){
    while(c.moveToNext())imageScreens.add(c.getInt(0));
+  }
+  // Earlier versions retained OCR from sparse title pages when the artwork had little ink.
+  for(int screen=1;screen<=3;screen++){
+   if(imageScreens.contains(screen))continue;
+   StringBuilder page=new StringBuilder();
+   for(Paragraph p:all)if(p.screen==screen){if(page.length()>0)page.append('\n');page.append(p.text);}
+   if(!CapturePageClassifier.looksLikeCoverText(screen,page.toString()))continue;
+   imageScreens.add(screen);
+   String title=CapturePageClassifier.title("cover",page.toString());
+   if(title!=null){ContentValues name=new ContentValues();name.put("title",title);name.put("auto_title",0);
+    db.update("books",name,"id=? AND auto_title=1",new String[]{Long.toString(bookId)});}
   }
   List<Paragraph> textOnly=new ArrayList<>();Set<Integer> imageSeqs=new HashSet<>();
   for(Paragraph p:all){if(imageScreens.contains(p.screen))imageSeqs.add(p.seq);else textOnly.add(p);}

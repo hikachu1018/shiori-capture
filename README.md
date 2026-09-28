@@ -1,4 +1,4 @@
-# しおり Capture 0.4.0
+# しおり Capture 0.4.1
 
 Kindleの表示画面を端末内で撮影し、日本語OCRの本文を本棚へ保存するAndroidアプリです。オフラインで動作し、撮影した本はアプリ内で章ごとにRSVP読書できます。Android 11以降が必要です。
 
@@ -13,6 +13,8 @@ Kindleの表示画面を端末内で撮影し、日本語OCRの本文を本棚�
 0.3.6では撮影した目次が複数画面に分かれていても項目を収集し、本文の章見出しと表記を照合して目次の章名を使います。章冒頭との一致が確認できた場合は、目次と短い表紙画面を読書本文から除外します。保存済みの本も自動で再検出しますが、手動編集した章は上書きしません。章編集画面の「目次から章を再検出」で任意の本を再処理でき、一致しない章も「目次の項目から章を追加」で目次の章名と本文の開始段落を結び付けられます。スクリーンショットからKindleのリンク先情報は取得できないため、対応する本文の冒頭がまだ保存されていない場合、章の開始位置は決められません。
 
 0.4.0では章追加の画面選択を1回のタップで確定できるようにしました。撮影した表紙と挿絵を圧縮画像として端末内に保存して読書画面に表示し、表紙のOCRから本の名前を自動設定します。本棚の「本文と画像を確認」で画面ごとのOCR結果、読書本文から除外した文字、保存画像を確認できます。目次と画像ページのOCR文字は読書本文から除外します。表紙に文字がない場合や検出できない場合は仮の本名を付けるため、本棚から変更してください。
+
+0.4.1では、黒背景で文字の少ないタイトルページを画像として判定できない問題を修正しました。出版社や訳者の表記があるタイトルページを本名の取得に使い、OCR文字は読書本文から除外します。0.4.0で保存した本も更新時に再判定して本名と本文を修復します。ただし、保存していなかった元画像は復元できません。本文ページの文字認識自体を改善するには、誤認識した本文画面の例を確認する必要があります。
 
 ## 使い方
 
@@ -34,13 +36,13 @@ Kindleの表示画面を端末内で撮影し、日本語OCRの本文を本棚�
 
 ## Galaxyへのインストール
 
-Galaxyの64ビットARM端末向け小容量APK（約22MB）は、[GitHub Raw直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.4.0-galaxy-arm64.apk)からダウンロードできます。0.3.1ではGalaxyからこの配布経路で保存できたことを確認しました。保存したAPKは「マイファイル」から開いてインストールします。必要に応じて、使用したアプリに「不明なアプリのインストール」を許可します。
+Galaxyの64ビットARM端末向け小容量APK（約22MB）は、[GitHub Raw直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.4.1-galaxy-arm64.apk)からダウンロードできます。0.3.1ではGalaxyからこの配布経路で保存できたことを確認しました。保存したAPKは「マイファイル」から開いてインストールします。必要に応じて、使用したアプリに「不明なアプリのインストール」を許可します。
 
-GitHub ReleasesのAPK単体はGalaxyで保存が完了しなかったため、[GitHub Pages配布ページ](https://hikachu1018.github.io/shiori-capture/)と別経路の直接リンクを用意しました。Galaxy向けAPKを直接保存できない場合は[ReleaseのZIP版](https://github.com/hikachu1018/shiori-capture/releases/download/v0.4.0/shiori-capture-0.4.0-zip-download.zip)を「マイファイル」で展開してください。ZIPにはGalaxy向けAPKが入っています。
+GitHub ReleasesのAPK単体はGalaxyで保存が完了しなかったため、[GitHub Pages配布ページ](https://hikachu1018.github.io/shiori-capture/)と別経路の直接リンクを用意しました。Galaxy向けAPKを直接保存できない場合は[ReleaseのZIP版](https://github.com/hikachu1018/shiori-capture/releases/download/v0.4.1/shiori-capture-0.4.1-zip-download.zip)を「マイファイル」で展開してください。ZIPにはGalaxy向けAPKが入っています。
 
-端末のCPUが分からない場合は、[全機種向けAPKの別経路直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.4.0-universal.apk)を使えます。
+端末のCPUが分からない場合は、[全機種向けAPKの別経路直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.4.1-universal.apk)を使えます。
 
-0.3.0からは同じ署名鍵で上書き更新でき、本棚のデータも引き継ぎます。さらに古い試用版と署名が異なり「更新できません」と表示された場合は、旧版の章付きEPUBを端末の共有フォルダへ書き出し、旧版をアンインストールしてから0.4.0をインストールしてください。アンインストールで旧版のアプリ専用データは消えるため、先にEPUBが端末の共有フォルダに残っていることを確認します。
+0.3.0からは同じ署名鍵で上書き更新でき、本棚のデータも引き継ぎます。さらに古い試用版と署名が異なり「更新できません」と表示された場合は、旧版の章付きEPUBを端末の共有フォルダへ書き出し、旧版をアンインストールしてから0.4.1をインストールしてください。アンインストールで旧版のアプリ専用データは消えるため、先にEPUBが端末の共有フォルダに残っていることを確認します。
 
 ## 開発とビルド
 
