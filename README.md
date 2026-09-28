@@ -23,6 +23,8 @@ Kindleの表示画面を端末内で撮影し、日本語OCRの本文を本棚�
 
 GitHub Releasesの [0.3.1](https://github.com/hikachu1018/shiori-capture/releases/tag/v0.3.1) から、Galaxyの64ビットARM端末向け小容量APK（約22MB）を直接ダウンロードできます。端末での直接保存は検証中です。APKが保存できない場合やCPUが不明な場合は、同じReleaseのZIP版をダウンロードし、マイファイルで展開してからAPKを開きます。必要に応じて、使用したブラウザーに「不明なアプリのインストール」を一時的に許可します。公開したSHA-256とダウンロードしたAPKの値を照合できます。
 
+ReleaseからAPKを直接保存できない端末向けに、同じAPKの[GitHub Raw直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.3.1-galaxy-arm64.apk)と[GitHub Pages配布ページ](https://hikachu1018.github.io/shiori-capture/)も用意しました。公開URLから取得したファイルのSHA-256一致を確認済みです。Galaxy端末での保存結果は検証中です。
+
 0.3.0からは同じ署名鍵で上書き更新でき、本棚のデータも引き継ぎます。さらに古い試用版と署名が異なり「更新できません」と表示された場合は、旧版の章付きEPUBを端末の共有フォルダへ書き出し、旧版をアンインストールしてから0.3.1をインストールしてください。アンインストールで旧版のアプリ専用データは消えるため、先にEPUBが端末の共有フォルダに残っていることを確認します。
 
 ## 開発とビルド
