@@ -21,9 +21,9 @@ Kindleの表示画面を端末内で撮影し、日本語OCRの本文を本棚�
 
 ## Galaxyへのインストール
 
-GitHub Releasesの [0.3.1](https://github.com/hikachu1018/shiori-capture/releases/tag/v0.3.1) から、Galaxyの64ビットARM端末向け小容量APK（約22MB）を直接ダウンロードできます。端末での直接保存は検証中です。APKが保存できない場合やCPUが不明な場合は、同じReleaseのZIP版をダウンロードし、マイファイルで展開してからAPKを開きます。必要に応じて、使用したブラウザーに「不明なアプリのインストール」を一時的に許可します。公開したSHA-256とダウンロードしたAPKの値を照合できます。
+Galaxyの64ビットARM端末向け小容量APK（約22MB）は、[GitHub Raw直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.3.1-galaxy-arm64.apk)からダウンロードできます。Galaxyでこのリンクから直接保存できたことを確認しました。保存したAPKは「マイファイル」から開いてインストールします。必要に応じて、使用したアプリに「不明なアプリのインストール」を許可します。
 
-ReleaseからAPKを直接保存できない端末向けに、同じAPKの[GitHub Raw直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.3.1-galaxy-arm64.apk)と[GitHub Pages配布ページ](https://hikachu1018.github.io/shiori-capture/)も用意しました。公開URLから取得したファイルのSHA-256一致を確認済みです。Galaxy端末での保存結果は検証中です。
+GitHub ReleasesのAPK単体はGalaxyで保存が完了しなかったため、[GitHub Pages配布ページ](https://hikachu1018.github.io/shiori-capture/)と別経路の直接リンクを用意しました。公開URLから取得したファイルのSHA-256一致を確認済みです。直接保存できない場合は[ReleaseのZIP版](https://github.com/hikachu1018/shiori-capture/releases/download/v0.3.1/shiori-capture-0.3.1-zip-download.zip)を「マイファイル」で展開してください。
 
 端末のCPUが分からない場合は、[全機種向けAPKの別経路直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.3.1-universal.apk)を使えます。
 
