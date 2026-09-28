@@ -95,6 +95,7 @@ public final class MainActivity extends Activity {
   content.addView(text("本棚",27,Ui.INK,true));content.addView(text("続きから読む本を選んでください。",14,Ui.MUTED,false),Ui.margins(this,5,0));addStatus();
   libraryBooks=db.listBooks();
   if(libraryBooks.isEmpty()){
+   searchQuery="";
    LinearLayout empty=Ui.card(this);empty.addView(text("本はまだありません",20,Ui.INK,true));
    empty.addView(text("まず本を撮影するか、旧版の章付きEPUBを取り込んでください。",14,Ui.MUTED,false),Ui.margins(this,8,0));
    content.addView(empty,Ui.margins(this,20,0));
