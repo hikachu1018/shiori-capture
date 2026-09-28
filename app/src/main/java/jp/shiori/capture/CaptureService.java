@@ -11,6 +11,7 @@ import com.google.android.gms.tasks.Tasks;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.*;
 import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions;
+import java.io.ByteArrayOutputStream;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -85,11 +86,16 @@ public class CaptureService extends AccessibilityService {
   String problem=null;boolean empty=false,duplicate=false;
   try{
    Bitmap ocrBitmap=prepareOcr(bitmap);
+   double ink=inkFraction(ocrBitmap);
    Text result;try{result=Tasks.await(recognizer.process(InputImage.fromBitmap(ocrBitmap,0)),90,TimeUnit.SECONDS);}finally{if(ocrBitmap!=bitmap)ocrBitmap.recycle();}
    String text=KindleProgressFilter.cleanText(readingText(result,vertical,bitmap.getHeight()));
    empty=text.trim().isEmpty();
    duplicate=screen==resumeFirstScreen&&CaptureResume.sameText(resumeLastText,text);
-   if(!duplicate)books.appendScreen(bookId,screen,text,hash);
+   if(!duplicate){
+    String imageKind=CapturePageClassifier.imageKind(screen,text,ink);
+    byte[] image=imageKind==null?null:encodeImage(bitmap);
+    books.appendScreen(bookId,screen,text,hash,imageKind,image,CapturePageClassifier.title(imageKind,text));
+   }
   }catch(Exception e){problem="文字認識・保存で停止: "+(e.getMessage()==null?e.getClass().getSimpleName():e.getMessage());}
   finally{bitmap.recycle();}
   final String error=problem;final boolean wasEmpty=empty,wasDuplicate=duplicate;
@@ -110,6 +116,24 @@ public class CaptureService extends AccessibilityService {
   long light=0;int n=0;for(int y=source.getHeight()/10;y<source.getHeight();y+=Math.max(1,source.getHeight()/10))for(int x=source.getWidth()/10;x<source.getWidth();x+=Math.max(1,source.getWidth()/10)){int p=source.getPixel(x,y);light+=(Color.red(p)+Color.green(p)+Color.blue(p))/3;n++;}
   if(n==0||light/n>=100)return source;
   Bitmap result=Bitmap.createBitmap(source.getWidth(),source.getHeight(),Bitmap.Config.ARGB_8888);Paint paint=new Paint();paint.setColorFilter(new ColorMatrixColorFilter(new float[]{-1,0,0,0,255,0,-1,0,0,255,0,0,-1,0,255,0,0,0,1,0}));new Canvas(result).drawBitmap(source,0,0,paint);return result;
+ }
+ static double inkFraction(Bitmap bitmap){
+  int dark=0,total=0,w=bitmap.getWidth(),h=bitmap.getHeight();
+  for(int y=0;y<64;y++)for(int x=0;x<64;x++){
+   int pixel=bitmap.getPixel(Math.min(w-1,(int)(w*(.08+(x+.5)*.84/64))),Math.min(h-1,(int)(h*(.07+(y+.5)*.83/64))));
+   int light=(Color.red(pixel)*3+Color.green(pixel)*6+Color.blue(pixel))/10;
+   if(light<225)dark++;total++;
+  }
+  return total==0?0:(double)dark/total;
+ }
+ static byte[] encodeImage(Bitmap source){
+  int max=Math.max(source.getWidth(),source.getHeight());
+  Bitmap scaled=max>1280?Bitmap.createScaledBitmap(source,Math.max(1,source.getWidth()*1280/max),Math.max(1,source.getHeight()*1280/max),true):source;
+  try{
+   ByteArrayOutputStream out=new ByteArrayOutputStream();
+   if(!scaled.compress(Bitmap.CompressFormat.WEBP_LOSSY,80,out))throw new IllegalStateException("画像を圧縮できません");
+   return out.toByteArray();
+  }finally{if(scaled!=source)scaled.recycle();}
  }
  static long fingerprint(Bitmap b){
   // Sample the central page; omit the status bar, navigation bar and moving page indicator.

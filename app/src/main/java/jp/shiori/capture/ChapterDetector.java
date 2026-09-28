@@ -124,8 +124,7 @@ final class ChapterDetector {
     if(!continuation)break;
     addEntries(page,0,entries);tocEnd=i;
    }
-   // Keep an isolated contents screen visible when no body was captured.
-   if(tocEnd+1<pages.size()){
+   {
     for(int i=tocStart;i<=tocEnd;i++)for(BookStore.Paragraph p:pages.get(i).lines)hidden.add(p.seq);
     for(int i=tocStart-1;i>=0&&i>=tocStart-2;i--){
      Screen page=pages.get(i);int length=0;for(BookStore.Paragraph p:page.lines)length+=p.text.length();

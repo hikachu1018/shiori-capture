@@ -7,6 +7,7 @@
    <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
   </activity>
   <activity android:name=".ReaderActivity" android:exported="false" android:label="しおりで読む" />
+  <activity android:name=".BookPreviewActivity" android:exported="false" android:label="本文と画像を確認" />
   <activity android:name=".ChapterEditorActivity" android:exported="false" android:label="章を編集" />
   <service android:name=".CaptureService" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true" android:label="しおり Capture">
    <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>

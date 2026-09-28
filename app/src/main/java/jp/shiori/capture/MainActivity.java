@@ -5,6 +5,8 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Bundle;
@@ -20,6 +22,7 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.RadioButton;
@@ -28,6 +31,7 @@ import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import java.io.InputStream;
+import java.io.File;
 import java.text.Collator;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -143,6 +147,10 @@ public final class MainActivity extends Activity {
  }
  private void addBookCard(BookStore.Book book){
   LinearLayout card=Ui.card(this);bookListContainer.addView(card,Ui.margins(this,12,0));
+  File cover=db.firstPageImage(book.id);
+  if(cover!=null){BitmapFactory.Options options=new BitmapFactory.Options();options.inSampleSize=4;Bitmap bitmap=BitmapFactory.decodeFile(cover.getAbsolutePath(),options);
+   if(bitmap!=null){ImageView thumbnail=new ImageView(this);thumbnail.setImageBitmap(bitmap);thumbnail.setScaleType(ImageView.ScaleType.FIT_CENTER);
+    thumbnail.setContentDescription("保存した表紙・ページ画像");card.addView(thumbnail,new LinearLayout.LayoutParams(-1,dp(130)));}}
   card.addView(text(book.title,20,Ui.INK,true));
   String badge="partial".equals(book.state)?"途中まで保存":"capturing".equals(book.state)?"撮影中":"読書できます";
   TextView state=text(badge,13,"partial".equals(book.state)?Ui.WARNING:Ui.GREEN,true);
@@ -159,6 +167,7 @@ public final class MainActivity extends Activity {
    if("partial".equals(book.state))openReader(book.id,-1);else showBookMenu(book,card);
   });
   pair(card,first,second);
+  addButton(card,"本文と画像を確認",Ui.SECONDARY,()->openPreview(book.id),8);
   if("partial".equals(book.state))addButton(card,"章編集・書き出しなど",Ui.PLAIN,()->showBookMenu(book,card),8);
  }
  private void showBookMenu(BookStore.Book book,View anchor){
@@ -197,8 +206,8 @@ public final class MainActivity extends Activity {
    .setPositiveButton("設定へ",(d,w)->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).setNegativeButton("戻る",null).show(),12);
   content.addView(permission,Ui.margins(this,14,0));
   LinearLayout details=Ui.card(this);details.addView(text("本とページ送り",18,Ui.INK,true));
-  details.addView(text("本の名前",14,Ui.MUTED,true),Ui.margins(this,15,3));
-  title=new EditText(this);title.setSingleLine(true);title.setHint("例：本のタイトル");title.setText(draftTitle);title.setTextSize(17);details.addView(title);
+  details.addView(text("本の名前（空欄なら表紙から自動取得）",14,Ui.MUTED,true),Ui.margins(this,15,3));
+  title=new EditText(this);title.setSingleLine(true);title.setHint("空欄のまま開始できます");title.setText(draftTitle);title.setTextSize(17);details.addView(title);
   details.addView(text("本文の向き",14,Ui.MUTED,true),Ui.margins(this,16,0));writing=choices(details,"縦書き","横書き",draftVertical);
   details.addView(text("次ページへ送る指の方向",14,Ui.MUTED,true),Ui.margins(this,12,0));direction=choices(details,"右へスワイプ","左へスワイプ",draftRight);
   content.addView(details,Ui.margins(this,12,0));
@@ -219,7 +228,7 @@ public final class MainActivity extends Activity {
  private void beginCapture(){
   if(CaptureService.instance==null){message("先にユーザー補助の権限をオンにしてください。");return;}
   if(CaptureService.running){message("撮影中です。");return;}
-  String name=title.getText().toString().trim();if(name.isEmpty()){title.setError("本の名前を入力してください");title.requestFocus();return;}
+  String name=title.getText().toString().trim();
   saveDraft();long id=db.createBook(name);launchCapture(id,false,currentVertical(),currentRight(),currentWait());
  }
  private void resumeCapture(BookStore.Book book){
@@ -254,6 +263,7 @@ public final class MainActivity extends Activity {
  private void rename(BookStore.Book book){EditText input=new EditText(this);input.setSingleLine(true);input.setText(book.title);
   new AlertDialog.Builder(this).setTitle("本の名前").setView(input).setPositiveButton("保存",(d,w)->{try{db.renameBook(book.id,input.getText().toString());render();}catch(Exception e){message(e.getMessage());}}).setNegativeButton("戻る",null).show();}
  private void openReader(long bookId,int chapterStart){Intent i=new Intent(this,ReaderActivity.class);i.putExtra("bookId",bookId);if(chapterStart>=0)i.putExtra("chapterStart",chapterStart);startActivity(i);}
+ private void openPreview(long bookId){Intent i=new Intent(this,BookPreviewActivity.class);i.putExtra("bookId",bookId);startActivity(i);}
  private void chooseChapter(long bookId){List<BookStore.Chapter> chapters=db.listChapters(bookId);if(chapters.isEmpty()){message("章がありません。");return;}
   String[] names=new String[chapters.size()];for(int i=0;i<names.length;i++)names[i]=chapters.get(i).title;
   new AlertDialog.Builder(this).setTitle("読み始める章").setItems(names,(d,which)->openReader(bookId,chapters.get(which).startSeq)).setNegativeButton("戻る",null).show();}

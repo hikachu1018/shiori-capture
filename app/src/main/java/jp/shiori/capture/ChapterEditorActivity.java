@@ -42,9 +42,7 @@ public final class ChapterEditorActivity extends Activity {
   List<BookStore.Chapter> chapters=db.listChapters(bookId);
   List<BookStore.Paragraph> paragraphs=db.listParagraphs(bookId);
   for(int i=0;i<chapters.size();i++)addChapterCard(i,chapters.get(i),paragraphs);
-  Button add=Ui.button(this,"章を追加",Ui.PRIMARY,()->chooseBoundary(seq->askTitle("新しい章",name->{
-   List<BookStore.Chapter> all=db.listChapters(bookId);all.add(new BookStore.Chapter(seq,name));save(all);
-  })));
+  Button add=Ui.button(this,"章を追加",Ui.PRIMARY,()->chooseBoundary(seq->addChapterAt(seq,suggestTitle(seq))));
   LinearLayout bottom=new LinearLayout(this);bottom.setPadding(dp(20),dp(10),dp(20),dp(12));bottom.setBackground(Ui.background(this,Ui.SURFACE,0,0));
   bottom.addView(add,new LinearLayout.LayoutParams(-1,dp(54)));root.addView(bottom);
  }
@@ -68,13 +66,21 @@ public final class ChapterEditorActivity extends Activity {
   ChapterDetector.Analysis analysis=ChapterDetector.analyze(db.listAllParagraphs(bookId));
   if(analysis.tocTitles.isEmpty()){message("撮影した本文から目次の項目を見つけられませんでした。");return;}
   String[] titles=analysis.tocTitles.toArray(new String[0]);
-  new AlertDialog.Builder(this).setTitle("目次の章名を選ぶ").setItems(titles,(dialog,which)->chooseBoundary(seq->{
-   List<BookStore.Chapter> all=db.listChapters(bookId);List<BookStore.Paragraph> visible=db.listParagraphs(bookId);
-   int first=visible.isEmpty()?-1:visible.get(0).seq;
-   if(seq==first&&all.size()==1&&"冒頭".equals(all.get(0).title))all.set(0,new BookStore.Chapter(0,titles[which]));
-   else all.add(new BookStore.Chapter(seq,titles[which]));
-   save(all);
-  })).setNegativeButton("戻る",null).show();
+  new AlertDialog.Builder(this).setTitle("目次の章名を選ぶ").setItems(titles,(dialog,which)->chooseBoundary(seq->addChapterAt(seq,titles[which]))).setNegativeButton("戻る",null).show();
+ }
+ private String suggestTitle(int seq){
+  for(BookStore.Paragraph p:db.listParagraphs(bookId))if(p.seq==seq){
+   String candidate=p.text.trim();if(candidate.length()>=2&&candidate.length()<=40&&!candidate.matches(".*[。！？!?]$"))return candidate;
+   break;
+  }
+  return "章 "+(db.listChapters(bookId).size()+1);
+ }
+ private void addChapterAt(int seq,String name){
+  List<BookStore.Chapter> all=db.listChapters(bookId);List<BookStore.Paragraph> visible=db.listParagraphs(bookId);
+  int first=visible.isEmpty()?-1:visible.get(0).seq;
+  if(seq==first&&all.size()==1&&"冒頭".equals(all.get(0).title)){all.set(0,new BookStore.Chapter(0,name));if(save(all))message("最初の章名を設定しました。必要なら変更できます。");return;}
+  for(BookStore.Chapter chapter:all)if(chapter.startSeq==seq){message("その位置には既に章があります。別の画面か段落を選んでください。");return;}
+  all.add(new BookStore.Chapter(seq,name));if(save(all))message("章を追加しました。必要なら章名を変更できます。");
  }
  private void confirmRedetect(){
   new AlertDialog.Builder(this).setTitle("章を再検出しますか？")
@@ -84,7 +90,7 @@ public final class ChapterEditorActivity extends Activity {
     try(BookStore worker=new BookStore(this)){
      ChapterDetector.Analysis analysis=worker.rebuildChapters(bookId,true);
      if(analysis==null)result="この本に再検出できる撮影本文がありません。";
-     else if(analysis.tocCount>0&&analysis.matchedCount==0)result="目次は見つかりましたが、本文の章冒頭との一致がありませんでした。章立ては変更していません。";
+     else if(analysis.tocCount>0&&analysis.matchedCount==0)result="目次を読書本文から除外しました。本文の章冒頭と一致しなかったため、章立ては変更していません。";
      else {result=analysis.tocCount>0?"章立てを更新しました。目次"+analysis.tocCount+"項目のうち本文で"+analysis.matchedCount+"章を確認しました。":"目次を検出できなかったため、本文の見出しから章立てを更新しました。";updated=true;}
     }catch(Exception e){result="再検出できませんでした: "+e.getMessage();}
     final String output=result;final boolean changed=updated;runOnUiThread(()->{if(changed)refresh();message(output);});
@@ -97,15 +103,27 @@ public final class ChapterEditorActivity extends Activity {
   }).setNegativeButton("戻る",null).show();
  }
  private void replace(int index,BookStore.Chapter replacement){List<BookStore.Chapter> all=db.listChapters(bookId);all.set(index,replacement);save(all);}
- private void save(List<BookStore.Chapter> chapters){chapters.sort(Comparator.comparingInt(c->c.startSeq));try{db.editChapters(bookId,chapters);refresh();}
-  catch(Exception e){message(e.getMessage()==null?"章を変更できませんでした":e.getMessage());}}
+ private boolean save(List<BookStore.Chapter> chapters){chapters.sort(Comparator.comparingInt(c->c.startSeq));try{db.editChapters(bookId,chapters);refresh();return true;}
+  catch(Exception e){message(e.getMessage()==null?"章を変更できませんでした":e.getMessage());return false;}}
  private void chooseBoundary(IntConsumer selected){
   List<BookStore.Paragraph> paragraphs=db.listParagraphs(bookId);if(paragraphs.size()<2){message("章の境界にできる段落がありません");return;}
   List<Group> groups=new ArrayList<>();String previous="";
   for(int i=0;i<paragraphs.size();i++){BookStore.Paragraph p=paragraphs.get(i);String key=p.screen>0?"画面 "+p.screen:"段落 "+(i/25+1)+"〜";
    if(!key.equals(previous)){groups.add(new Group(key));previous=key;}groups.get(groups.size()-1).paragraphs.add(p);}
   String[] names=new String[groups.size()];for(int i=0;i<groups.size();i++)names[i]=groups.get(i).name+"  "+shortText(groups.get(i).paragraphs.get(0).text,22);
-  new AlertDialog.Builder(this).setTitle("開始画面を選ぶ").setItems(names,(d,which)->chooseParagraph(groups.get(which),selected)).setNegativeButton("戻る",null).show();
+  new AlertDialog.Builder(this).setTitle("開始画面を押すと決定します")
+   .setItems(names,(d,which)->{
+    Group group=groups.get(which);int first=group.paragraphs.get(0).seq;
+    boolean occupied=false;for(BookStore.Chapter ch:db.listChapters(bookId))if(ch.startSeq==first){occupied=true;break;}
+    if(occupied&&group.paragraphs.size()>1)chooseParagraph(group,selected);
+    else selected.accept(first);
+   })
+   .setNeutralButton("段落を選ぶ",(d,w)->chooseParagraphScreen(groups,selected))
+   .setNegativeButton("戻る",null).show();
+ }
+ private void chooseParagraphScreen(List<Group> groups,IntConsumer selected){
+  String[] names=new String[groups.size()];for(int i=0;i<groups.size();i++)names[i]=groups.get(i).name;
+  new AlertDialog.Builder(this).setTitle("段落を選ぶ画面").setItems(names,(d,which)->chooseParagraph(groups.get(which),selected)).setNegativeButton("戻る",null).show();
  }
  private void chooseParagraph(Group group,IntConsumer selected){String[] names=new String[group.paragraphs.size()];
   for(int i=0;i<names.length;i++)names[i]=(group.paragraphs.get(i).seq+1)+": "+shortText(group.paragraphs.get(i).text,65);

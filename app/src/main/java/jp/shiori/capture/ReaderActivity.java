@@ -2,6 +2,9 @@ package jp.shiori.capture;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Insets;
 import android.os.Bundle;
 import android.os.Handler;
@@ -11,29 +14,31 @@ import android.view.Gravity;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Comparator;
 
 /** An offline, focused RSVP reader that stops at chapter boundaries. */
 public final class ReaderActivity extends Activity {
  private static final class Phrase{
-  final int seq,offset;final String text;
-  Phrase(int seq,int offset,String text){this.seq=seq;this.offset=offset;this.text=text;}
+  final int seq,offset,screen;final String text;final boolean image;
+  Phrase(int seq,int offset,int screen,String text,boolean image){this.seq=seq;this.offset=offset;this.screen=screen;this.text=text;this.image=image;}
  }
  private final Handler handler=new Handler(Looper.getMainLooper());private final List<Phrase> phrases=new ArrayList<>();
  private List<BookStore.Chapter> chapters;private BookStore db;private long bookId;
  private int position,speed;private boolean playing;
- private TextView word,progress,speedLabel,hint;private Button playButton,chapterButton;private ProgressBar progressBar;
+ private TextView word,progress,speedLabel,hint;private ImageView pageImage;private Button playButton,chapterButton;private ProgressBar progressBar;
  private final Runnable tick=new Runnable(){@Override public void run(){
   if(!playing)return;
   if(position+1>=phrases.size()||chapterAt(phrases.get(position+1).seq)!=chapterAt(phrases.get(position).seq)){
    pause();updateHint();return;
   }
-  position++;showPhrase();handler.postDelayed(this,Math.max(100,60000/speed));
+  position++;showPhrase();if(phrases.get(position).image){pause();return;}handler.postDelayed(this,Math.max(100,60000/speed));
  }};
  private int dp(int n){return Ui.dp(this,n);}
  private LinearLayout row(){LinearLayout result=new LinearLayout(this);result.setOrientation(LinearLayout.HORIZONTAL);return result;}
@@ -43,21 +48,27 @@ public final class ReaderActivity extends Activity {
  @Override public void onCreate(Bundle state){super.onCreate(state);
   bookId=getIntent().getLongExtra("bookId",-1);db=new BookStore(this);BookStore.Book book=db.getBook(bookId);if(book==null){finish();return;}
   chapters=db.listChapters(bookId);speed=Math.max(80,Math.min(600,Store.prefs(this).getInt("rsvpSpeed",240)));
-  for(BookStore.Paragraph p:db.listParagraphs(bookId))for(PhraseTokenizer.Token token:PhraseTokenizer.segment(p.text))phrases.add(new Phrase(p.seq,token.offset,token.text));
+  for(BookStore.Paragraph p:db.listParagraphs(bookId))for(PhraseTokenizer.Token token:PhraseTokenizer.segment(p.text))phrases.add(new Phrase(p.seq,token.offset,p.screen,token.text,false));
+  for(BookStore.PageImage image:db.listPageImages(bookId))phrases.add(new Phrase(image.startSeq,-1,image.screen,"",true));
+  phrases.sort(Comparator.comparingInt((Phrase p)->p.seq).thenComparingInt(p->p.offset));
   int requested=getIntent().getIntExtra("chapterStart",-1);
   if(requested>=0)position=firstAt(requested);
-  else{position=Math.max(0,phrases.size()-1);for(int i=0;i<phrases.size();i++){Phrase p=phrases.get(i);if(p.seq>book.readSeq||(p.seq==book.readSeq&&p.offset>=book.readOffset)){position=i;break;}}}
+  else{position=Math.max(0,phrases.size()-1);for(int i=0;i<phrases.size();i++){Phrase p=phrases.get(i);if(p.seq>book.readSeq||(p.seq==book.readSeq&&p.offset>=book.readOffset)){position=i;break;}}
+   if(!phrases.isEmpty()&&phrases.get(0).image&&book.readSeq==0&&book.readOffset==0)position=0;}
   LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(Ui.BACKGROUND);root.setPadding(dp(18),dp(15),dp(18),dp(16));setContentView(root);
   root.setOnApplyWindowInsetsListener((v,in)->{Insets i=in.getInsets(WindowInsets.Type.systemBars());v.setPadding(dp(18)+i.left,dp(15)+i.top,dp(18)+i.right,dp(16)+i.bottom);return in;});
   LinearLayout top=row();Button back=Ui.button(this,"本棚へ",Ui.PLAIN,this::finish);addRowButton(top,back,1,10);
   TextView title=Ui.text(this,book.title,19,Ui.INK,true);title.setSingleLine(true);title.setEllipsize(android.text.TextUtils.TruncateAt.END);title.setGravity(Gravity.CENTER_VERTICAL);
   top.addView(title,new LinearLayout.LayoutParams(0,dp(52),3));root.addView(top);
   chapterButton=Ui.button(this,"章を選ぶ",Ui.SECONDARY,this::chooseChapter);root.addView(chapterButton,Ui.margins(this,7,0));
+  root.addView(Ui.button(this,"本文と画像を確認",Ui.PLAIN,this::openPreview),Ui.margins(this,6,0));
   LinearLayout focus=Ui.card(this);focus.setPadding(dp(12),dp(20),dp(12),dp(12));
   LinearLayout.LayoutParams focusParams=new LinearLayout.LayoutParams(-1,0,1);focusParams.topMargin=dp(13);root.addView(focus,focusParams);
   word=Ui.text(this,"",46,Ui.INK,true);word.setGravity(Gravity.CENTER);word.setMaxLines(3);
   word.setAutoSizeTextTypeUniformWithConfiguration(26,48,2,TypedValue.COMPLEX_UNIT_SP);
   focus.addView(word,new LinearLayout.LayoutParams(-1,0,1));
+  pageImage=new ImageView(this);pageImage.setScaleType(ImageView.ScaleType.FIT_CENTER);pageImage.setContentDescription("本のページ画像");pageImage.setVisibility(android.view.View.GONE);
+  focus.addView(pageImage,new LinearLayout.LayoutParams(-1,0,1));
   hint=Ui.text(this,"",13,Ui.MUTED,false);hint.setGravity(Gravity.CENTER);focus.addView(hint,new LinearLayout.LayoutParams(-1,dp(28)));
   progress=Ui.text(this,"",13,Ui.MUTED,false);root.addView(progress,Ui.margins(this,13,4));
   progressBar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progressBar.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.GREEN));
@@ -76,25 +87,29 @@ public final class ReaderActivity extends Activity {
  private int firstAt(int seq){for(int i=0;i<phrases.size();i++)if(phrases.get(i).seq>=seq)return i;return Math.max(0,phrases.size()-1);}
  private int chapterAt(int seq){int index=0;for(int i=0;i<chapters.size();i++)if(chapters.get(i).startSeq<=seq)index=i;else break;return index;}
  private boolean atBoundary(){return !phrases.isEmpty()&&(position+1>=phrases.size()||chapterAt(phrases.get(position+1).seq)!=chapterAt(phrases.get(position).seq));}
- private void updateHint(){if(hint==null)return;if(phrases.isEmpty())hint.setText("本文がありません");else if(position+1>=phrases.size())hint.setText("本の終わりです");else if(atBoundary())hint.setText("章の終わりです。次の章を選べます");else hint.setText(playing?"再生中 · タップで一時停止":"再生で続きを読みます");}
+ private void updateHint(){if(hint==null)return;if(phrases.isEmpty())hint.setText("本文がありません");else if(phrases.get(position).image)hint.setText("画像ページです。進むで続きを読みます");else if(position+1>=phrases.size())hint.setText("本の終わりです");else if(atBoundary())hint.setText("章の終わりです。次の章を選べます");else hint.setText(playing?"再生中 · タップで一時停止":"再生で続きを読みます");}
  private void showPhrase(){
   if(phrases.isEmpty()){word.setText("本文がありません");progress.setText("");progressBar.setProgress(0);playButton.setEnabled(false);updateHint();return;}
   Phrase current=phrases.get(position);int chapterIndex=chapterAt(current.seq);
-  String name=chapters.isEmpty()?"冒頭":chapters.get(chapterIndex).title;chapterButton.setText(name+" を選ぶ");word.setText(current.text);
-  progress.setText((position+1)+" / "+phrases.size()+" 文節  ·  "+(chapterIndex+1)+" / "+Math.max(1,chapters.size())+" 章");
+  String name=chapters.isEmpty()?"冒頭":chapters.get(chapterIndex).title;chapterButton.setText(name+" を選ぶ");
+  if(current.image){Bitmap bitmap=BitmapFactory.decodeFile(db.imageFile(bookId,current.screen).getAbsolutePath());pageImage.setImageBitmap(bitmap);pageImage.setVisibility(bitmap==null?android.view.View.GONE:android.view.View.VISIBLE);
+   word.setText("画像を開けません");word.setVisibility(bitmap==null?android.view.View.VISIBLE:android.view.View.GONE);}
+  else{pageImage.setImageDrawable(null);pageImage.setVisibility(android.view.View.GONE);word.setVisibility(android.view.View.VISIBLE);word.setText(current.text);}
+  progress.setText((position+1)+" / "+phrases.size()+" 項目  ·  "+(chapterIndex+1)+" / "+Math.max(1,chapters.size())+" 章");
   progressBar.setMax(phrases.size());progressBar.setProgress(position+1);
   speedLabel.setText("速さ  "+speed+"/分");db.saveProgress(bookId,current.seq,current.offset);updateHint();
  }
  private void setSpeed(int value){speed=Math.max(80,Math.min(600,value));Store.prefs(this).edit().putInt("rsvpSpeed",speed).apply();
   speedLabel.setText("速さ  "+speed+"/分");if(playing){handler.removeCallbacks(tick);handler.postDelayed(tick,Math.max(100,60000/speed));}}
  private void step(int delta){pause();if(phrases.isEmpty())return;position=Math.max(0,Math.min(phrases.size()-1,position+delta));showPhrase();}
- private void play(){if(phrases.isEmpty())return;if(atBoundary()){updateHint();return;}playing=true;playButton.setText("一時停止");
+ private void play(){if(phrases.isEmpty())return;if(phrases.get(position).image){step(1);return;}if(atBoundary()){updateHint();return;}playing=true;playButton.setText("一時停止");
   getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);updateHint();handler.postDelayed(tick,Math.max(100,60000/speed));}
  private void pause(){playing=false;handler.removeCallbacks(tick);if(playButton!=null)playButton.setText("再生");getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);updateHint();}
  private void chooseChapter(){if(chapters.isEmpty())return;String[] names=new String[chapters.size()];for(int i=0;i<names.length;i++)names[i]=chapters.get(i).title;
   new AlertDialog.Builder(this).setTitle("読み始める章").setItems(names,(dialog,which)->{pause();position=firstAt(chapters.get(which).startSeq);showPhrase();}).setNegativeButton("戻る",null).show();}
  private void jumpChapter(int delta){if(phrases.isEmpty()||chapters.isEmpty())return;int target=chapterAt(phrases.get(position).seq)+delta;
   if(target<0||target>=chapters.size())return;pause();position=firstAt(chapters.get(target).startSeq);showPhrase();}
+ private void openPreview(){Intent intent=new Intent(this,BookPreviewActivity.class);intent.putExtra("bookId",bookId);if(!phrases.isEmpty())intent.putExtra("screen",phrases.get(position).screen);startActivity(intent);}
  @Override protected void onPause(){pause();super.onPause();}
  @Override protected void onDestroy(){handler.removeCallbacks(tick);if(db!=null)db.close();super.onDestroy();}
 }

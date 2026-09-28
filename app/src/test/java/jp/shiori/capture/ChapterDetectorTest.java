@@ -56,10 +56,10 @@ public class ChapterDetectorTest {
    new BookStore.Paragraph(0,1,"本文だけ"),new BookStore.Paragraph(1,1,"次の行")));
   assertEquals(1,chapters.size());
  }
- @Test public void matchesUnnumberedTitlesAndKeepsAnIsolatedContentsScreen(){
+ @Test public void matchesUnnumberedTitlesAndExcludesAnIsolatedContentsScreen(){
   List<BookStore.Paragraph> contents=Arrays.asList(
    new BookStore.Paragraph(0,1,"目次"),new BookStore.Paragraph(1,1,"はじめに"),new BookStore.Paragraph(2,1,"遠い街の話"));
-  assertTrue(ChapterDetector.analyze(contents).hiddenSeqs.isEmpty());
+  assertTrue(ChapterDetector.analyze(contents).hiddenSeqs.contains(0));
   List<BookStore.Paragraph> complete=Arrays.asList(
    contents.get(0),contents.get(1),contents.get(2),
    new BookStore.Paragraph(3,2,"はじめに"),new BookStore.Paragraph(4,2,"最初の本文"),
