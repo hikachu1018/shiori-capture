@@ -61,7 +61,7 @@ final class BookStore extends SQLiteOpenHelper {
   db.execSQL("CREATE INDEX chapter_book_seq ON chapters(book_id,start_seq)");
  }
  @Override public void onUpgrade(SQLiteDatabase db,int oldVersion,int newVersion){
-  boolean needsChapterRebuild=oldVersion<5;
+  boolean needsChapterRebuild=oldVersion<6;
   if(oldVersion==1&&newVersion>=2){
    db.execSQL("ALTER TABLE books ADD COLUMN chapters_edited INTEGER NOT NULL DEFAULT 0");
    db.execSQL("ALTER TABLE books ADD COLUMN last_hash INTEGER");
@@ -81,8 +81,8 @@ final class BookStore extends SQLiteOpenHelper {
    db.execSQL("CREATE TABLE page_images(book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,screen INTEGER NOT NULL,start_seq INTEGER NOT NULL,kind TEXT NOT NULL,PRIMARY KEY(book_id,screen))");
    oldVersion=6;
   }
-  if(needsChapterRebuild&&oldVersion>=6)try(Cursor c=db.rawQuery("SELECT id FROM books WHERE chapters_edited=0 AND state!='capturing'",null)){
-   while(c.moveToNext())rebuildInDatabase(db,c.getLong(0));
+  if(needsChapterRebuild&&oldVersion>=6)try(Cursor c=db.rawQuery("SELECT id,chapters_edited FROM books WHERE state!='capturing'",null)){
+   while(c.moveToNext())rebuildInDatabase(db,c.getLong(0),c.getInt(1)!=0);
   }
   if(oldVersion!=newVersion)throw new IllegalStateException("未対応の本棚データです");
  }
@@ -270,7 +270,8 @@ final class BookStore extends SQLiteOpenHelper {
   for(PageImage page:listPageImages(bookId))if(imageFile(bookId,page.screen).isFile())return imageFile(bookId,page.screen);
   return null;
  }
- private static ChapterDetector.Analysis rebuildInDatabase(SQLiteDatabase db,long bookId){
+ private static ChapterDetector.Analysis rebuildInDatabase(SQLiteDatabase db,long bookId){return rebuildInDatabase(db,bookId,false);}
+ private static ChapterDetector.Analysis rebuildInDatabase(SQLiteDatabase db,long bookId,boolean preserveChapters){
   List<Paragraph> all=new ArrayList<>();
   try(Cursor c=db.rawQuery("SELECT seq,screen,text FROM paragraphs WHERE book_id=? ORDER BY seq",new String[]{Long.toString(bookId)})){
    while(c.moveToNext())all.add(new Paragraph(c.getInt(0),c.getInt(1),c.getString(2)));
@@ -289,7 +290,7 @@ final class BookStore extends SQLiteOpenHelper {
   imageSeqs.addAll(result.hiddenSeqs);
   for(int seq:imageSeqs)db.update("paragraphs",hidden,"book_id=? AND seq=?",new String[]{Long.toString(bookId),Integer.toString(seq)});
   // Without a body match, keep existing chapter boundaries while excluding navigation text.
-  if(result.tocCount>0&&result.matchedCount==0)return result;
+  if(preserveChapters||(result.tocCount>0&&result.matchedCount==0))return result;
   db.delete("chapters","book_id=?",new String[]{Long.toString(bookId)});
   for(Chapter ch:result.chapters){ContentValues value=new ContentValues();value.put("book_id",bookId);value.put("start_seq",ch.startSeq);value.put("title",ch.title);db.insertOrThrow("chapters",null,value);}
   return result;
