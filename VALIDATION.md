@@ -1,5 +1,13 @@
 # 検証結果
 
+## 0.3.5 Kindle進捗表示の再修正
+
+[GitHub Actionsのビルド](https://github.com/hikachu1018/shiori-capture/actions/runs/36405297315)で単体テスト、全機種向けとGalaxy向けのクリーンビルドが成功しました。文字列テストでは数字・記号が欠けた進捗表示、複数行に分かれた時間・割合、本文と同じ行の表示を除去し、通常の本文は保持しました。OCRの画面下端10％に位置する行を本文に入れない判定もテストしました。
+
+Android 16エミュレーターのv3データベースに、旧フィルターが見逃す「章を読み終えるまで：」「７分 ４２％」と本文・手動章・読書位置を保存してから0.3.5のデバッグ版へ更新しました。データベースがv4へ移行し、進捗表示の2段落だけが消え、本文2段落、手動章の境界、読書位置が残ることをSQLiteで確認しました。
+
+署名済みAPKはアプリID `jp.shiori.capture`、versionCode 8、0.3.4と同じ署名証明書であることを確認しました。[GitHub RawのGalaxy向け直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.3.5-galaxy-arm64.apk)から全量を取得し、公開前のAPKとSHA-256が一致しました。[配布ページ](https://hikachu1018.github.io/shiori-capture/)の0.3.5表示も確認しました。Galaxy実機でのKindle画面の撮影、下部行の位置、保存済みの実際の本の修復は未確認です。
+
 ## 0.3.4 本棚管理
 
 [GitHub Actionsのビルド](https://github.com/hikachu1018/shiori-capture/actions/runs/36385350319)で単体テスト、全機種向けとGalaxy向けのクリーンビルドが成功しました。Android 16エミュレーターにサンプル本を登録し、検索で一致件数と空の検索結果を確認しました。本の削除をキャンセルした場合、本文・章を含むデータは残りました。削除を確定すると、本・章・段落がデータベースから削除され、本棚の空状態が表示されました。並び替えは実装済みですが、複数冊を使ったエミュレーターでの操作確認は行っていません。
