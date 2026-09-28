@@ -24,3 +24,10 @@ jobs:
           name: shiori-capture-unsigned
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
+      - name: Build Galaxy arm64 release
+        run: ./gradlew --no-daemon clean assembleRelease -PshioriAbi=arm64-v8a
+      - uses: actions/upload-artifact@v7
+        with:
+          name: shiori-capture-arm64-unsigned
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
