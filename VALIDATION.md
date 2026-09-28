@@ -1,5 +1,11 @@
 # 検証結果
 
+## 0.3.4 本棚管理
+
+[GitHub Actionsのビルド](https://github.com/hikachu1018/shiori-capture/actions/runs/36385350319)で単体テスト、全機種向けとGalaxy向けのクリーンビルドが成功しました。Android 16エミュレーターにサンプル本を登録し、検索で一致件数と空の検索結果を確認しました。本の削除をキャンセルした場合、本文・章を含むデータは残りました。削除を確定すると、本・章・段落がデータベースから削除され、本棚の空状態が表示されました。並び替えは実装済みですが、複数冊を使ったエミュレーターでの操作確認は行っていません。
+
+署名済みAPKはアプリID `jp.shiori.capture`、versionCode 7、0.3.3と同じ署名証明書であることを確認しました。[GitHub RawのGalaxy向け直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.3.4-galaxy-arm64.apk)から全量を取得し、公開前のAPKとSHA-256が一致しました。[配布ページ](https://hikachu1018.github.io/shiori-capture/)の0.3.4表示も確認しました。Galaxy実機での0.3.4のインストールと本棚操作は未確認です。
+
 ## 0.3.3 Kindle進捗表示の除外
 
 [GitHub Actionsのビルド](https://github.com/hikachu1018/shiori-capture/actions/runs/36377953884)で単体テスト、全機種向けとGalaxy向けのクリーンビルドが成功しました。Android 16エミュレーターの既存データベース（v2）に、本文と同じ段落に続く進捗表示、進捗表示だけの段落、2段落に分かれた進捗表示を入れ、0.3.3のデバッグ版へ更新しました。データベースはv3へ移行し、該当文字列と空になった段落だけが削除され、本文、手動設定の2章、読書位置は残りました。
