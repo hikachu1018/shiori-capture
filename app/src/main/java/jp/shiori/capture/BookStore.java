@@ -35,7 +35,7 @@ final class BookStore extends SQLiteOpenHelper {
   CaptureCheckpoint(int lastScreen,String lastText,Long lastHash){this.lastScreen=lastScreen;this.lastText=lastText;this.lastHash=lastHash;}
  }
 
- BookStore(Context context){super(context,"shiori_books.db",null,3);}
+ BookStore(Context context){super(context,"shiori_books.db",null,4);}
  @Override public void onConfigure(SQLiteDatabase db){db.setForeignKeyConstraintsEnabled(true);}
  @Override public void onCreate(SQLiteDatabase db){
   db.execSQL("CREATE TABLE books(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,read_seq INTEGER NOT NULL DEFAULT 0,read_offset INTEGER NOT NULL DEFAULT 0,chapters_edited INTEGER NOT NULL DEFAULT 0,last_hash INTEGER)");
@@ -52,8 +52,10 @@ final class BookStore extends SQLiteOpenHelper {
    db.execSQL("UPDATE books SET chapters_edited=1");
    oldVersion=2;
   }
-  if(oldVersion==2&&newVersion>=3){removeSavedKindleProgress(db);return;}
-  throw new IllegalStateException("未対応の本棚データです");
+  if(oldVersion==2&&newVersion>=3){removeSavedKindleProgress(db);oldVersion=3;}
+  // Revisit v3 libraries: the old exact pattern missed partial and split OCR results.
+  if(oldVersion==3&&newVersion>=4){removeSavedKindleProgress(db);oldVersion=4;}
+  if(oldVersion!=newVersion)throw new IllegalStateException("未対応の本棚データです");
  }
 
  private static final class SavedLine {

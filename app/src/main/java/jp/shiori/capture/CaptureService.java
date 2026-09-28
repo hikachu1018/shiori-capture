@@ -86,7 +86,7 @@ public class CaptureService extends AccessibilityService {
   try{
    Bitmap ocrBitmap=prepareOcr(bitmap);
    Text result;try{result=Tasks.await(recognizer.process(InputImage.fromBitmap(ocrBitmap,0)),90,TimeUnit.SECONDS);}finally{if(ocrBitmap!=bitmap)ocrBitmap.recycle();}
-   String text=KindleProgressFilter.cleanText(readingText(result,vertical));
+   String text=KindleProgressFilter.cleanText(readingText(result,vertical,bitmap.getHeight()));
    empty=text.trim().isEmpty();
    duplicate=screen==resumeFirstScreen&&CaptureResume.sameText(resumeLastText,text);
    if(!duplicate)books.appendScreen(bookId,screen,text,hash);
@@ -122,8 +122,12 @@ public class CaptureService extends AccessibilityService {
   }
   return hash;
  }
- static String readingText(Text recognized,boolean vertical){
-  List<Text.Line> lines=new ArrayList<>();for(Text.TextBlock block:recognized.getTextBlocks())lines.addAll(block.getLines());
+ static String readingText(Text recognized,boolean vertical,int screenHeight){
+  List<Text.Line> lines=new ArrayList<>();for(Text.TextBlock block:recognized.getTextBlocks())for(Text.Line line:block.getLines()){
+   Rect bounds=line.getBoundingBox();
+   // Kindle places the chapter progress below the reading area; ignore it even if OCR garbles the label.
+   if(bounds==null||!KindleProgressFilter.isFooterRegion(bounds.top,screenHeight))lines.add(line);
+  }
   // Stable column grouping for Japanese vertical layout; broad illustrations and ruby may still require review.
   if(vertical){lines.sort(Comparator.comparingInt((Text.Line l)->l.getBoundingBox()==null?0:l.getBoundingBox().right).reversed());}
   else {lines.sort(Comparator.comparingInt((Text.Line l)->l.getBoundingBox()==null?0:l.getBoundingBox().top).thenComparingInt(l->l.getBoundingBox()==null?0:l.getBoundingBox().left));}
