@@ -25,7 +25,7 @@ Kindleの表示画面を端末内で撮影し、日本語OCRの本文を本棚�
 
 Galaxyの64ビットARM端末向け小容量APK（約22MB）は、[GitHub Raw直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.3.2-galaxy-arm64.apk)からダウンロードできます。0.3.1ではGalaxyからこの配布経路で保存できたことを確認しました。保存したAPKは「マイファイル」から開いてインストールします。必要に応じて、使用したアプリに「不明なアプリのインストール」を許可します。
 
-GitHub ReleasesのAPK単体はGalaxyで保存が完了しなかったため、[GitHub Pages配布ページ](https://hikachu1018.github.io/shiori-capture/)と別経路の直接リンクを用意しました。直接保存できない場合は[ReleaseのZIP版](https://github.com/hikachu1018/shiori-capture/releases/download/v0.3.2/shiori-capture-0.3.2-zip-download.zip)を「マイファイル」で展開してください。
+GitHub ReleasesのAPK単体はGalaxyで保存が完了しなかったため、[GitHub Pages配布ページ](https://hikachu1018.github.io/shiori-capture/)と別経路の直接リンクを用意しました。Galaxy向けAPKを直接保存できない場合は[ReleaseのZIP版](https://github.com/hikachu1018/shiori-capture/releases/download/v0.3.2/shiori-capture-0.3.2-zip-download.zip)を「マイファイル」で展開してください。ZIPにはGalaxy向けAPKが入っています。
 
 端末のCPUが分からない場合は、[全機種向けAPKの別経路直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.3.2-universal.apk)を使えます。
 
