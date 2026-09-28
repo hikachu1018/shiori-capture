@@ -1,5 +1,11 @@
 # 検証結果
 
+## 0.3.3 Kindle進捗表示の除外
+
+[GitHub Actionsのビルド](https://github.com/hikachu1018/shiori-capture/actions/runs/36377953884)で単体テスト、全機種向けとGalaxy向けのクリーンビルドが成功しました。Android 16エミュレーターの既存データベース（v2）に、本文と同じ段落に続く進捗表示、進捗表示だけの段落、2段落に分かれた進捗表示を入れ、0.3.3のデバッグ版へ更新しました。データベースはv3へ移行し、該当文字列と空になった段落だけが削除され、本文、手動設定の2章、読書位置は残りました。
+
+署名済みAPKはアプリID `jp.shiori.capture`、versionCode 6、0.3.2と同じ署名証明書であることを確認しました。[GitHub RawのGalaxy向け直接リンク](https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/shiori-capture-0.3.3-galaxy-arm64.apk)から全量を取得し、公開前のAPKとSHA-256が一致しました。Galaxy実機での0.3.3のダウンロードとKindle画面の撮影は未確認です。
+
 ## 0.3.2 UI改善版
 
 [GitHub Actionsのビルド](https://github.com/hikachu1018/shiori-capture/actions/runs/36374299993)で単体テスト、全機種向けとGalaxy向けのクリーンビルドが成功しました。Android 16エミュレーターにデバッグ版を入れ、本棚、撮影設定、読書、章編集の画面表示と画面遷移を確認しました。撮影オーバーレイは実機のKindle上では未確認です。
