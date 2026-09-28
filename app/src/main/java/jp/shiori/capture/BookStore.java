@@ -35,7 +35,7 @@ final class BookStore extends SQLiteOpenHelper {
   CaptureCheckpoint(int lastScreen,String lastText,Long lastHash){this.lastScreen=lastScreen;this.lastText=lastText;this.lastHash=lastHash;}
  }
 
- BookStore(Context context){super(context,"shiori_books.db",null,2);}
+ BookStore(Context context){super(context,"shiori_books.db",null,3);}
  @Override public void onConfigure(SQLiteDatabase db){db.setForeignKeyConstraintsEnabled(true);}
  @Override public void onCreate(SQLiteDatabase db){
   db.execSQL("CREATE TABLE books(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,read_seq INTEGER NOT NULL DEFAULT 0,read_offset INTEGER NOT NULL DEFAULT 0,chapters_edited INTEGER NOT NULL DEFAULT 0,last_hash INTEGER)");
@@ -50,9 +50,49 @@ final class BookStore extends SQLiteOpenHelper {
    db.execSQL("ALTER TABLE books ADD COLUMN last_hash INTEGER");
    // v0.3.0 did not record whether a chapter was edited; preserve its current boundaries.
    db.execSQL("UPDATE books SET chapters_edited=1");
-   return;
+   oldVersion=2;
   }
+  if(oldVersion==2&&newVersion>=3){removeSavedKindleProgress(db);return;}
   throw new IllegalStateException("未対応の本棚データです");
+ }
+
+ private static final class SavedLine {
+  final long id,bookId;final int screen;final String text;
+  SavedLine(long id,long bookId,int screen,String text){this.id=id;this.bookId=bookId;this.screen=screen;this.text=text;}
+ }
+
+ private static final class SavedChange {
+  final long id;final String text;
+  SavedChange(long id,String text){this.id=id;this.text=text;}
+ }
+
+ private static void cleanSavedScreen(List<SavedLine> rows,List<SavedChange> changes){
+  if(rows.isEmpty())return;
+  List<String> original=new ArrayList<>(rows.size());for(SavedLine row:rows)original.add(row.text);
+  List<String> cleaned=KindleProgressFilter.cleanLines(original);
+  for(int i=0;i<rows.size();i++){
+   SavedLine row=rows.get(i);String value=cleaned.get(i);
+   if(!value.equals(row.text))changes.add(new SavedChange(row.id,value));
+  }
+ }
+
+ private static void removeSavedKindleProgress(SQLiteDatabase db){
+  List<SavedLine> screenRows=new ArrayList<>();long currentBook=-1;int currentScreen=-1;
+  List<SavedChange> changes=new ArrayList<>();
+  try(Cursor c=db.rawQuery("SELECT id,book_id,screen,text FROM paragraphs ORDER BY book_id,screen,seq",null)){
+   while(c.moveToNext()){
+    SavedLine row=new SavedLine(c.getLong(0),c.getLong(1),c.getInt(2),c.getString(3));
+    if(!screenRows.isEmpty()&&(row.bookId!=currentBook||row.screen!=currentScreen||row.screen==0)){
+     cleanSavedScreen(screenRows,changes);screenRows.clear();
+    }
+    screenRows.add(row);currentBook=row.bookId;currentScreen=row.screen;
+   }
+  }
+  cleanSavedScreen(screenRows,changes);
+  for(SavedChange change:changes){
+   if(change.text.isEmpty())db.delete("paragraphs","id=?",new String[]{Long.toString(change.id)});
+   else {ContentValues update=new ContentValues();update.put("text",change.text);db.update("paragraphs",update,"id=?",new String[]{Long.toString(change.id)});}
+  }
  }
 
  long createBook(String title){
@@ -73,8 +113,9 @@ final class BookStore extends SQLiteOpenHelper {
     if(c.moveToFirst()&&!c.isNull(0))seq=c.getInt(0)+1;
    }
    boolean saved=false;
-   for(String raw:text.split("\\n")){
-    String line=raw.trim();if(line.isEmpty())continue;
+   for(String raw:KindleProgressFilter.cleanLines(java.util.Arrays.asList(text.split("\\n",-1)))){
+    String line=raw.trim();
+    if(line.isEmpty())continue;
     ContentValues p=new ContentValues();p.put("book_id",bookId);p.put("seq",seq++);p.put("screen",screen);p.put("text",line);
     db.insertOrThrow("paragraphs",null,p);saved=true;
    }
@@ -182,7 +223,13 @@ final class BookStore extends SQLiteOpenHelper {
    long id=db.insertOrThrow("books",null,b);int seq=0;
    for(BookArchive.ImportedChapter chapter:imported.chapters){
     ContentValues ch=new ContentValues();ch.put("book_id",id);ch.put("start_seq",seq);ch.put("title",chapter.title);db.insertOrThrow("chapters",null,ch);
-    for(String line:chapter.paragraphs){ContentValues p=new ContentValues();p.put("book_id",id);p.put("seq",seq++);p.put("screen",0);p.put("text",line);db.insertOrThrow("paragraphs",null,p);}
+    boolean saved=false;
+    for(String raw:KindleProgressFilter.cleanLines(chapter.paragraphs)){
+     String line=raw.trim();
+     if(line.isEmpty())continue;
+     ContentValues p=new ContentValues();p.put("book_id",id);p.put("seq",seq++);p.put("screen",0);p.put("text",line);db.insertOrThrow("paragraphs",null,p);saved=true;
+    }
+    if(!saved){ContentValues p=new ContentValues();p.put("book_id",id);p.put("seq",seq++);p.put("screen",0);p.put("text","［本文がありません］");db.insertOrThrow("paragraphs",null,p);}
    }
    db.setTransactionSuccessful();return id;
   }finally{db.endTransaction();}

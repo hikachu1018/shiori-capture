@@ -86,7 +86,7 @@ public class CaptureService extends AccessibilityService {
   try{
    Bitmap ocrBitmap=prepareOcr(bitmap);
    Text result;try{result=Tasks.await(recognizer.process(InputImage.fromBitmap(ocrBitmap,0)),90,TimeUnit.SECONDS);}finally{if(ocrBitmap!=bitmap)ocrBitmap.recycle();}
-   String text=readingText(result,vertical);
+   String text=KindleProgressFilter.cleanText(readingText(result,vertical));
    empty=text.trim().isEmpty();
    duplicate=screen==resumeFirstScreen&&CaptureResume.sameText(resumeLastText,text);
    if(!duplicate)books.appendScreen(bookId,screen,text,hash);
