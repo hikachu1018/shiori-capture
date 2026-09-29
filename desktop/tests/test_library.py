@@ -1,4 +1,5 @@
 import copy
+import itertools
 import json
 import ssl
 import tempfile
@@ -11,8 +12,8 @@ from unittest import mock
 
 from PIL import Image
 
-from shiori.app import App
-from shiori.capture import CaptureSession, build_chapters, clean_text, kindle_window
+from shiori.app import App, acquire_single_instance
+from shiori.capture import CaptureSession, CaptureUnavailable, active_kindle_window, build_chapters, clean_text, kindle_window
 from shiori.library import Conflict, Library, new_book
 from shiori.sync import SyncServer
 
@@ -116,25 +117,97 @@ class LibraryTests(unittest.TestCase):
     def test_capture_stops_after_unchanged_final_page(self):
         book = new_book("末尾の検証")
         self.library.put(book, 0)
-        pages = iter([Image.new("RGB", (300, 300), "white")])
-        final_page = Image.new("RGB", (300, 300), "black")
-        def visible(_handle):
-            return next(pages, final_page)
+        colors = ("white", "gray", "black")
+        page = [0]
+        turns = []
+        def visible(_handle, _process_id=0):
+            return Image.new("RGB", (300, 300), colors[page[0]])
+        def key(code, _scan, flags, _extra):
+            if flags == 0:
+                saved = self.library.get(book["uuid"])[1]
+                turns.append(len({p["screen"] for p in saved["paragraphs"]}))
+                page[0] = min(page[0] + 1, 2)
         messages = []
         session = CaptureSession(self.library, book["uuid"], True, messages.append)
         session.stop.wait = lambda _delay: False
         window = mock.Mock()
-        window.GetForegroundWindow.return_value = 1
+        window.keybd_event.side_effect = key
         with mock.patch("shiori.capture.kindle_window", return_value=1), \
+             mock.patch("shiori.capture.window_process_id", return_value=123), \
+             mock.patch("shiori.capture.active_kindle_window", return_value=1), \
              mock.patch("shiori.capture.visible_page", side_effect=visible), \
-             mock.patch("shiori.capture.accessible_text", return_value="これは画面ごとの本文を模擬した、二十文字以上の検証用テキストです。"), \
+             mock.patch("shiori.capture.accessible_text", side_effect=lambda _handle: f"{page[0] + 1}画面目の本文を模擬した、二十文字以上の検証用テキストです。"), \
              mock.patch("shiori.capture.USER32", window), \
-             mock.patch("shiori.capture.time.sleep"):
+             mock.patch("shiori.capture.time.monotonic", side_effect=(x * .5 for x in itertools.count())):
             session.run()
         saved = self.library.get(book["uuid"])[1]
         self.assertEqual(saved["state"], "complete")
-        self.assertEqual({row["screen"] for row in saved["paragraphs"]}, {1, 2})
+        self.assertEqual({row["screen"] for row in saved["paragraphs"]}, {1, 2, 3})
+        self.assertEqual(turns[:3], [1, 2, 3])
+        self.assertFalse(session.pending_path.exists())
         self.assertTrue(any("末尾" in message for message in messages))
+
+    def test_second_page_ocr_failure_does_not_turn_and_recovers_staged_page(self):
+        book = new_book("保存の検証")
+        self.library.put(book, 0)
+        page = [0]
+        turns = []
+        window = mock.Mock()
+        def key(_code, _scan, flags, _extra):
+            if flags == 0:
+                turns.append(len({p["screen"] for p in self.library.get(book["uuid"])[1]["paragraphs"]}))
+                page[0] = min(page[0] + 1, 1)
+        window.keybd_event.side_effect = key
+        def visible(_handle, _process_id=0):
+            return Image.new("RGB", (300, 300), "white" if page[0] == 0 else "black")
+        messages = []
+        with mock.patch("shiori.capture.kindle_window", return_value=1), \
+             mock.patch("shiori.capture.window_process_id", return_value=123), \
+             mock.patch("shiori.capture.active_kindle_window", return_value=1), \
+             mock.patch("shiori.capture.visible_page", side_effect=visible), \
+             mock.patch("shiori.capture.accessible_text", side_effect=lambda _handle: "最初の画面にある長い文章です。これは保存を検証するための文章です。" if page[0] == 0 else ""), \
+             mock.patch("shiori.capture.USER32", window), \
+             mock.patch("shiori.capture.time.monotonic", side_effect=(x * .5 for x in itertools.count())), \
+             mock.patch("shiori.capture.JapaneseOcr.read", side_effect=RuntimeError("OCR失敗")):
+            failed = CaptureSession(self.library, book["uuid"], True, messages.append)
+            failed.stop.wait = lambda _delay: False
+            failed.run()
+        self.assertEqual(turns, [1])
+        self.assertEqual({p["screen"] for p in self.library.get(book["uuid"])[1]["paragraphs"]}, {1})
+        self.assertTrue(failed.pending_path.exists())
+        self.assertTrue(any("OCR失敗" in message for message in messages))
+        with mock.patch("shiori.capture.kindle_window", return_value=1), \
+             mock.patch("shiori.capture.window_process_id", return_value=123), \
+             mock.patch("shiori.capture.active_kindle_window", return_value=1), \
+             mock.patch("shiori.capture.visible_page", side_effect=visible), \
+             mock.patch("shiori.capture.accessible_text", return_value=""), \
+             mock.patch("shiori.capture.USER32", window), \
+             mock.patch("shiori.capture.time.monotonic", side_effect=(x * .5 for x in itertools.count())), \
+             mock.patch("shiori.capture.JapaneseOcr.read", return_value="二番目の画面は復旧後に保存される本文です。これは十分長い文章です。"):
+            resumed = CaptureSession(self.library, book["uuid"], True, messages.append)
+            resumed.stop.wait = lambda _delay: False
+            resumed.run()
+        self.assertEqual({p["screen"] for p in self.library.get(book["uuid"])[1]["paragraphs"]}, {1, 2})
+        self.assertEqual(turns[1], 2)
+        self.assertFalse(resumed.pending_path.exists())
+
+    def test_refresh_updates_screen_choices_after_capture(self):
+        book = new_book("一覧の検証")
+        self.library.put(book, 0)
+        app = App.__new__(App)
+        app.library = self.library
+        app.selected = book["uuid"]
+        app.items = []
+        app.books = mock.Mock()
+        app.screen = mock.MagicMock()
+        app.screen.get.return_value = "1"
+        app.show_screen = mock.Mock()
+        self.library.update(book["uuid"], lambda current: current["paragraphs"].extend([
+            {"uuid": str(uuid.uuid4()), "seq": i, "screen": i + 1, "text": str(i), "hidden": False}
+            for i in range(3)
+        ]))
+        app.refresh()
+        self.assertEqual(app.screen.__setitem__.call_args.args, ("values", [1, 2, 3]))
 
     def test_kindle_with_empty_window_title_is_detected_by_process(self):
         with mock.patch("shiori.capture.USER32") as user, \
@@ -142,6 +215,37 @@ class LibraryTests(unittest.TestCase):
             user.GetForegroundWindow.return_value = 123
             user.GetWindowTextW.side_effect = lambda _handle, title, _size: setattr(title, "value", "")
             self.assertEqual(kindle_window(), 123)
+
+    def test_kindle_window_change_and_foreign_focus(self):
+        with mock.patch("shiori.capture.USER32") as user, \
+             mock.patch("shiori.capture.window_process_id", side_effect=lambda handle: {1: 77, 2: 77, 3: 88}[handle]), \
+             mock.patch("shiori.capture.window_executable", side_effect=lambda handle: "shiori.exe" if handle == 3 else "kindle.exe"):
+            user.GetForegroundWindow.return_value = 2
+            self.assertEqual(active_kindle_window(1, 77), 2)
+            user.GetForegroundWindow.return_value = 3
+            with self.assertRaisesRegex(CaptureUnavailable, "Kindle以外"):
+                active_kindle_window(1, 77)
+
+    def test_duplicate_pc_instance_is_rejected(self):
+        with mock.patch("shiori.app.ctypes.windll") as system:
+            system.kernel32.CreateMutexW.return_value = 321
+            system.kernel32.GetLastError.return_value = 183
+            self.assertFalse(acquire_single_instance())
+            system.kernel32.CloseHandle.assert_called_once_with(321)
+            system.user32.MessageBoxW.assert_called_once()
+
+    def test_repeated_accessibility_text_uses_ocr_for_new_page(self):
+        book = new_book("本文の検証")
+        self.library.put(book, 0)
+        session = CaptureSession(self.library, book["uuid"], True, lambda _message: None)
+        first = "同じアクセシビリティ文字列が残る場合の検証用本文です。"
+        image = Image.new("RGB", (300, 300), "white")
+        session._process(1, image, first, "first")
+        with mock.patch.object(session.ocr, "read", return_value="二画面目には異なる本文があります。これが実際の内容です。") as ocr:
+            session._process(2, image, first, "second")
+        ocr.assert_called_once()
+        saved = self.library.get(book["uuid"])[1]
+        self.assertIn("二画面目", "".join(p["text"] for p in saved["paragraphs"] if p["screen"] == 2))
 
     def test_capture_button_can_retry_after_failed_thread(self):
         app = App.__new__(App)

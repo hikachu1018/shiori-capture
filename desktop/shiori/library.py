@@ -62,6 +62,7 @@ def validate_book(book: dict) -> None:
 
 class Library:
     def __init__(self, path: Path):
+        self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.execute("PRAGMA journal_mode=WAL")

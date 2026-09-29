@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import ctypes
 import io
 import os
 import threading
@@ -23,10 +24,32 @@ def app_data() -> Path:
     return Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "ShioriCapture"
 
 
+_instance_handle = None
+
+
+def acquire_single_instance() -> bool:
+    """Prevent two current-version processes from writing the same library."""
+    global _instance_handle
+    if not hasattr(ctypes, "windll"):
+        return True
+    kernel = ctypes.windll.kernel32
+    kernel.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p]
+    kernel.CreateMutexW.restype = ctypes.c_void_p
+    _instance_handle = kernel.CreateMutexW(None, False, "Local\\ShioriCapture-PC")
+    if not _instance_handle:
+        raise OSError("単一起動の確認に失敗しました")
+    if kernel.GetLastError() == 183:
+        kernel.CloseHandle(_instance_handle)
+        _instance_handle = None
+        ctypes.windll.user32.MessageBoxW(None, "しおり Capture PCはすでに起動しています。", "しおり Capture", 0)
+        return False
+    return True
+
+
 class App:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("しおり Capture PC 0.5.1")
+        self.root.title("しおり Capture PC 0.5.2")
         self.root.geometry("1000x710")
         self.library = Library(app_data() / "books.db")
         self.server = SyncServer(self.library, app_data())
@@ -90,7 +113,7 @@ class App:
             self.status.set(message)
             self.refresh()
             if message.startswith("撮影を停止しました:"):
-                messagebox.showerror("撮影を開始できません", message.removeprefix("撮影を停止しました: "), parent=self.root)
+                messagebox.showerror("撮影を停止しました", message.removeprefix("撮影を停止しました: "), parent=self.root)
         self.root.after(0, show)
 
     def refresh(self):
@@ -105,6 +128,14 @@ class App:
                 if item["uuid"] == selected:
                     self.books.selection_set(i)
                     break
+            record = self.library.get(selected)
+            if record:
+                screens = sorted({p["screen"] for p in record[1]["paragraphs"]})
+                current = self.screen.get()
+                self.screen["values"] = screens
+                if screens and current not in {str(value) for value in screens}:
+                    self.screen.set(str(screens[0]))
+                    self.show_screen()
 
     def refresh_periodically(self):
         if not self.root.winfo_exists():
@@ -342,4 +373,5 @@ class App:
 
 
 if __name__ == "__main__":
-    App().run()
+    if acquire_single_instance():
+        App().run()

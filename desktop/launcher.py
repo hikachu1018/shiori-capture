@@ -14,6 +14,7 @@ if len(sys.argv) == 4 and sys.argv[1] == "--verify-ocr":
         destination.write_text(traceback.format_exc(), encoding="utf-8")
         raise
 else:
-    from shiori.app import App
+    from shiori.app import App, acquire_single_instance
 
-    App().run()
+    if acquire_single_instance():
+        App().run()
