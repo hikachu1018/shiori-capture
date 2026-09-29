@@ -1,4 +1,3 @@
 ea1f308b8c18a0cc6d226348e9c1e7d6b1a3a8582104833000a13fb46ab4d414  shiori-capture-0.5.0-galaxy-arm64.apk
 ce15708e1157155d06753f40186c1669d856b408b376a3f540ce2bdc6482dd84  shiori-capture-0.5.0-universal.apk
 dc30dcf3d13a7e426e56b4d89b43e9e63e797f00256623c13a52b29cccd24b66  shiori-capture-0.5.0-zip-download.zip
-59b46bcf21fb349d58758f7564b7d337e7d1f7a677bb87a2a4dcc37207577c0d  ShioriCapture-0.5.0-windows.zip
