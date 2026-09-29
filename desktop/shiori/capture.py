@@ -118,6 +118,7 @@ class JapaneseOcr:
                     if not target.is_dir():
                         shutil.copytree(model, target)
             os.environ.setdefault("DISABLE_MODEL_SOURCE_CHECK", "True")
+            os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
         os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(cache))
         try:
             from paddleocr import PaddleOCR

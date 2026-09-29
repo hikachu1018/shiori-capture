@@ -99,6 +99,23 @@ final class SyncBookCodec {
   for(String name:new String[]{"paragraphs","chapters","images"}){JSONArray array=book.getJSONArray(name);for(int i=0;i<array.length();i++)array.getJSONObject(i).put("uuid",UUID.randomUUID().toString());}
   return importBook(store,book,0);
  }
+ static void chooseConflict(BookStore store,long originalId,long copyId,boolean keepGalaxy)throws Exception{
+  if(keepGalaxy){
+   JSONObject original=exportBook(store,originalId);
+   JSONObject copy=exportBook(store,copyId);
+   copy.put("uuid",original.getString("uuid"));
+   copy.put("title",original.getString("title"));
+   int revision=states(store).get(original.getString("uuid")).revision;
+   importBook(store,copy,revision);
+   long now=Math.max(System.currentTimeMillis(),store.getBook(originalId).createdAt+1);
+   try(Cursor c=store.getReadableDatabase().rawQuery("SELECT sync_synced_at FROM books WHERE id=?",new String[]{Long.toString(originalId)})){
+    if(c.moveToFirst())now=Math.max(now,c.getLong(0)+1);
+   }
+   store.getWritableDatabase().execSQL("UPDATE books SET updated_at=?,sync_content_dirty=1 WHERE id=?",
+    new Object[]{now,originalId});
+  }
+  store.deleteBook(copyId);
+ }
  private static void validate(JSONObject book)throws JSONException{
   if(book.getInt("format")!=1)throw new JSONException("未対応の本棚データです");
   UUID.fromString(book.getString("uuid"));if(book.getString("title").trim().isEmpty())throw new JSONException("本の名前がありません");

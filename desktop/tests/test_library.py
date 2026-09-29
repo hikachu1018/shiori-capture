@@ -93,6 +93,22 @@ class LibraryTests(unittest.TestCase):
         finally:
             server.close()
 
+    def test_pairing_dialog_renews_expired_code(self):
+        server = SyncServer(self.library, self.path, port=0)
+        server.start()
+        try:
+            server.pair_code = "expired"
+            server.pair_failures = 10
+            details = server.pairing_text()
+            self.assertEqual(server.pair_failures, 0)
+            self.assertEqual(len(details.split("|")[-1]), 6)
+            context = ssl._create_unverified_context()
+            base = f"https://127.0.0.1:{server.port}"
+            with urllib.request.urlopen(base + "/v1/pair?code=" + server.pair_code, context=context) as response:
+                self.assertTrue(json.load(response)["token"])
+        finally:
+            server.close()
+
 
 if __name__ == "__main__":
     unittest.main()

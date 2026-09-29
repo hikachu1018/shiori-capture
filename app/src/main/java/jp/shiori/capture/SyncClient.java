@@ -103,7 +103,12 @@ final class SyncClient {
      }catch(SyncException ex){if(ex.code!=409)throw ex;serverRevision=-1;}
     }
     if(serverRevision!=state.revision){
-     if(state.dirty()){SyncBookCodec.saveConflictCopy(store,state.id);conflicts++;}
+     if(state.dirty()){
+      long copyId=SyncBookCodec.saveConflictCopy(store,state.id);
+      String copyUuid=SyncBookCodec.exportBook(store,copyId).getString("uuid");
+      prefs.edit().putString("syncConflict:"+copyUuid,state.uuid).apply();
+      conflicts++;
+     }
      JSONObject fetched=request(host,pin,token,"GET","/v1/books/"+state.uuid,null);
      SyncBookCodec.importBook(store,fetched.getJSONObject("book"),fetched.getInt("revision"));downloaded++;
     }

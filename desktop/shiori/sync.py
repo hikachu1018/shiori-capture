@@ -61,6 +61,7 @@ class SyncServer:
         self.port = port
         self.pair_code = f"{secrets.randbelow(1000000):06d}"
         self.pair_deadline = datetime.now(timezone.utc) + timedelta(minutes=5)
+        self.pair_failures = 0
         self.httpd = ThreadingHTTPServer(("0.0.0.0", port), self._handler())
         self.port = self.httpd.server_address[1]
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -69,6 +70,10 @@ class SyncServer:
         self.thread = None
 
     def pairing_text(self) -> str:
+        # Showing the dialog is the explicit start of a new five-minute pairing window.
+        self.pair_code = f"{secrets.randbelow(1000000):06d}"
+        self.pair_deadline = datetime.now(timezone.utc) + timedelta(minutes=5)
+        self.pair_failures = 0
         return f"{lan_address()}:{self.port}|{self.fingerprint}|{self.pair_code}"
 
     def start(self):
@@ -105,7 +110,9 @@ class SyncServer:
                 path = urlsplit(self.path)
                 if path.path == "/v1/pair":
                     code = parse_qs(path.query).get("code", [""])[0]
-                    if datetime.now(timezone.utc) > parent.pair_deadline or not secrets.compare_digest(code, parent.pair_code):
+                    if (parent.pair_failures >= 10 or datetime.now(timezone.utc) > parent.pair_deadline
+                            or not parent.pair_code or not secrets.compare_digest(code, parent.pair_code)):
+                        parent.pair_failures += 1
                         self.reply(403, {"error": "コードが正しくないか、有効期限を過ぎました"})
                         return
                     token = secrets.token_urlsafe(32)
