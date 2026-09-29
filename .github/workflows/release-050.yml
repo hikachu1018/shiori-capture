@@ -1,0 +1,50 @@
+name: Release 0.5.0
+on:
+  push:
+    tags: [v0.5.0]
+permissions:
+  contents: write
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download and verify signed Android packages
+        run: |
+          mkdir release
+          cd release
+          for name in shiori-capture-0.5.0-galaxy-arm64.apk shiori-capture-0.5.0-universal.apk shiori-capture-0.5.0-zip-download.zip SHA256-0.5.0.txt; do
+            curl --fail --location --retry 3 --output "$name" "https://raw.githubusercontent.com/hikachu1018/shiori-capture/downloads/$name"
+          done
+          sha256sum --check SHA256-0.5.0.txt
+      - name: Create release with Android packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create v0.5.0 release/* --verify-tag --title 'しおり Capture 0.5.0' --notes-file .github/RELEASE_NOTES_0.5.0.md
+  windows:
+    needs: android
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install OCR and packager
+        shell: pwsh
+        run: |
+          python -m venv desktop/.venv
+          desktop/.venv/Scripts/python.exe -m pip install --upgrade pip
+          desktop/.venv/Scripts/python.exe -m pip install -r desktop/requirements.txt
+      - name: Build Windows package
+        shell: pwsh
+        run: ./desktop/build.ps1
+      - name: Upload Windows package and checksum
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $zip = 'desktop/dist/ShioriCapture-0.5.0-windows.zip'
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          "$hash  ShioriCapture-0.5.0-windows.zip" | Set-Content -Encoding ascii 'desktop/dist/SHA256-windows-0.5.0.txt'
+          gh release upload v0.5.0 $zip desktop/dist/SHA256-windows-0.5.0.txt --clobber
