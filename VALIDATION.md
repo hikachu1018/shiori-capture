@@ -6,6 +6,8 @@ Windows版の単体テスト7件で、章の目次照合、Kindle下部表示の
 
 [GitHub Actionsのビルド](https://github.com/hikachu1018/shiori-capture/actions/runs/36520058111)で、競合選択画面を含むAndroid単体テストと2種類の未署名APKビルドが成功しました。両APKを0.4.1と同じ証明書（SHA-256 `25450fe70cf4c23edece57bc54d99b5c1d8574420de603e48f31aab1174682b2`）で署名し、`apksigner verify` を通しました。Galaxy向けAPKのSHA-256は `ea1f308b8c18a0cc6d226348e9c1e7d6b1a3a8582104833000a13fb46ab4d414`、ZIP版は `dc30dcf3d13a7e426e56b4d89b43e9e63e797f00256623c13a52b29cccd24b66` です。両方を公開Raw URLから取得し、手元とハッシュ一致を確認しました。PCの新しいKindleアプリを使った実本の撮影と、Galaxy実機でのペアリング・転送・削除復元は未確認です。撮影が制限された本への回避処理は実装していません。
 
+[0.5.0 ReleaseのWindowsビルド](https://github.com/hikachu1018/shiori-capture/actions/runs/36523253873)も成功しました。公開ZIPを取得し直してSHA-256 `3287a30288ec07ab54c5b67bdff0280402cd1135decc03eb143e4561460e0d5d` と一致することを確認し、展開したEXEで上記のタイトル画像をOCR処理できました。EXEのGUI起動も確認しました。新しいKindle for Windowsの公式インストーラーはこの環境で終了コード1612となり、アプリの導入には至っていません。
+
 ## 0.4.1 黒背景のタイトルページ
 
 ユーザー提供のKindleタイトルページは、画面中央の文字が少なく、従来のサンプル計算でインク率が約0.00562でした。旧版の表紙判定条件0.01に達しなかったため、OCR文字が読書本文に入り、本名も仮名のままでした。提供画像に対応するOCR文字列を使った単体テストを追加し、タイトルページとして判定され、本名候補が「サピエンス全史」になることを確認しました。[GitHub Actionsのビルド](https://github.com/hikachu1018/shiori-capture/actions/runs/36418075314)で単体テストと2種類のAPKビルドが成功しました。
