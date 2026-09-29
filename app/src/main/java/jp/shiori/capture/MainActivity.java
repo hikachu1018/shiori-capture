@@ -124,9 +124,11 @@ public final class MainActivity extends Activity {
   }
   heading(content,"本棚の管理");
   LinearLayout tools=Ui.card(this);addButton(tools,"旧版の章付きEPUBを取り込む",Ui.SECONDARY,this::pickEpub,0);
+  addButton(tools,"PCと同期",Ui.SECONDARY,()->startActivity(new Intent(this,SyncActivity.class)),10);
+  addButton(tools,"最近削除した本を復元",Ui.PLAIN,this::showDeletedBooks,10);
   destination=text("",13,Ui.MUTED,false);tools.addView(destination,Ui.margins(this,16,0));
   addButton(tools,"書き出し先フォルダを選ぶ",Ui.PLAIN,this::pickFolder,9);content.addView(tools);
-  content.addView(text("試用版 0.3.6 · Android 11以降",12,Ui.MUTED,false),Ui.margins(this,18,0));
+  content.addView(text("0.5.0 · Android 11以降",12,Ui.MUTED,false),Ui.margins(this,18,0));
  }
  private void renderBookList(){
   if(bookListContainer==null)return;
@@ -178,7 +180,7 @@ public final class MainActivity extends Activity {
  }
  private void confirmDelete(BookStore.Book book){
   new AlertDialog.Builder(this).setTitle("「"+book.title+"」を削除しますか？")
-   .setMessage("端末内の本文、章、読書位置を本棚から削除します。元に戻せません。書き出し済みのEPUB・PDFは残ります。")
+   .setMessage("次回同期でPCの本棚からも削除します。30日以内は復元できます。書き出し済みのEPUB・PDFは残ります。")
    .setNegativeButton("戻る",null).setPositiveButton("削除",(dialog,which)->{
     Store.status(this,"「"+book.title+"」を削除しています…");refreshStatus();
     new Thread(()->{String result;boolean removed=false;
@@ -191,6 +193,10 @@ public final class MainActivity extends Activity {
     },"shiori-delete-book").start();
    }).show();
  }
+ private void showDeletedBooks(){List<BookStore.Book> deleted=db.listDeletedBooks();if(deleted.isEmpty()){message("復元できる本はありません。");return;}
+  String[] names=new String[deleted.size()];for(int i=0;i<names.length;i++)names[i]=deleted.get(i).title;
+  new AlertDialog.Builder(this).setTitle("最近削除した本").setItems(names,(dialog,which)->{db.restoreBook(deleted.get(which).id);render();})
+   .setNegativeButton("戻る",null).show();}
  private RadioGroup choices(LinearLayout parent,String first,String second,boolean firstSelected){
   RadioGroup group=new RadioGroup(this);group.setOrientation(LinearLayout.HORIZONTAL);
   for(String label:new String[]{first,second}){RadioButton option=new RadioButton(this);option.setText(label);option.setTextSize(15);option.setTextColor(Ui.INK);option.setId(View.generateViewId());group.addView(option,new RadioGroup.LayoutParams(0,dp(52),1));}

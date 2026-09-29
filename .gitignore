@@ -9,3 +9,14 @@ local.properties
 *.epub
 *.pdf
 captures/
+desktop/.venv/
+desktop/dist/
+desktop/build/
+desktop/.pytest_cache/
+desktop/**/__pycache__/
+desktop/*.db
+desktop/*.pem
+desktop/*.spec
+desktop/.cache/
+.android-sdk/
+.kindle-install.exe

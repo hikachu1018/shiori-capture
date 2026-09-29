@@ -15,6 +15,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
 
 /** Durable, private text library. Each OCR screen is committed before the next one is processed. */
 final class BookStore extends SQLiteOpenHelper {
@@ -50,13 +51,13 @@ final class BookStore extends SQLiteOpenHelper {
  }
 
  private final File imageDirectory;
- BookStore(Context context){super(context,"shiori_books.db",null,7);imageDirectory=new File(context.getFilesDir(),"page-images");}
+ BookStore(Context context){super(context,"shiori_books.db",null,9);imageDirectory=new File(context.getFilesDir(),"page-images");}
  @Override public void onConfigure(SQLiteDatabase db){db.setForeignKeyConstraintsEnabled(true);}
  @Override public void onCreate(SQLiteDatabase db){
-  db.execSQL("CREATE TABLE books(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,read_seq INTEGER NOT NULL DEFAULT 0,read_offset INTEGER NOT NULL DEFAULT 0,chapters_edited INTEGER NOT NULL DEFAULT 0,last_hash INTEGER,auto_title INTEGER NOT NULL DEFAULT 0)");
-  db.execSQL("CREATE TABLE paragraphs(id INTEGER PRIMARY KEY AUTOINCREMENT,book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,seq INTEGER NOT NULL,screen INTEGER NOT NULL,text TEXT NOT NULL,hidden INTEGER NOT NULL DEFAULT 0,UNIQUE(book_id,seq))");
-  db.execSQL("CREATE TABLE chapters(id INTEGER PRIMARY KEY AUTOINCREMENT,book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,start_seq INTEGER NOT NULL,title TEXT NOT NULL,UNIQUE(book_id,start_seq))");
-  db.execSQL("CREATE TABLE page_images(book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,screen INTEGER NOT NULL,start_seq INTEGER NOT NULL,kind TEXT NOT NULL,PRIMARY KEY(book_id,screen))");
+  db.execSQL("CREATE TABLE books(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,read_seq INTEGER NOT NULL DEFAULT 0,read_offset INTEGER NOT NULL DEFAULT 0,chapters_edited INTEGER NOT NULL DEFAULT 0,last_hash INTEGER,auto_title INTEGER NOT NULL DEFAULT 0,uuid TEXT UNIQUE,sync_revision INTEGER NOT NULL DEFAULT 0,sync_synced_at INTEGER NOT NULL DEFAULT 0,deleted_at INTEGER NOT NULL DEFAULT 0,sync_content_dirty INTEGER NOT NULL DEFAULT 1)");
+  db.execSQL("CREATE TABLE paragraphs(id INTEGER PRIMARY KEY AUTOINCREMENT,book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,seq INTEGER NOT NULL,screen INTEGER NOT NULL,text TEXT NOT NULL,hidden INTEGER NOT NULL DEFAULT 0,uuid TEXT UNIQUE,UNIQUE(book_id,seq))");
+  db.execSQL("CREATE TABLE chapters(id INTEGER PRIMARY KEY AUTOINCREMENT,book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,start_seq INTEGER NOT NULL,title TEXT NOT NULL,uuid TEXT UNIQUE,UNIQUE(book_id,start_seq))");
+  db.execSQL("CREATE TABLE page_images(book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,screen INTEGER NOT NULL,start_seq INTEGER NOT NULL,kind TEXT NOT NULL,uuid TEXT UNIQUE,PRIMARY KEY(book_id,screen))");
   db.execSQL("CREATE INDEX paragraph_book_seq ON paragraphs(book_id,seq)");
   db.execSQL("CREATE INDEX chapter_book_seq ON chapters(book_id,start_seq)");
  }
@@ -85,7 +86,29 @@ final class BookStore extends SQLiteOpenHelper {
   if(needsChapterRebuild&&oldVersion>=7)try(Cursor c=db.rawQuery("SELECT id,chapters_edited FROM books WHERE state!='capturing'",null)){
    while(c.moveToNext())rebuildInDatabase(db,c.getLong(0),c.getInt(1)!=0);
   }
+  if(oldVersion==7&&newVersion>=8){
+   db.execSQL("ALTER TABLE books ADD COLUMN uuid TEXT");
+   db.execSQL("ALTER TABLE books ADD COLUMN sync_revision INTEGER NOT NULL DEFAULT 0");
+   db.execSQL("ALTER TABLE books ADD COLUMN sync_synced_at INTEGER NOT NULL DEFAULT 0");
+   db.execSQL("ALTER TABLE books ADD COLUMN deleted_at INTEGER NOT NULL DEFAULT 0");
+   db.execSQL("ALTER TABLE paragraphs ADD COLUMN uuid TEXT");
+   db.execSQL("ALTER TABLE chapters ADD COLUMN uuid TEXT");
+   db.execSQL("ALTER TABLE page_images ADD COLUMN uuid TEXT");
+   for(String table:new String[]{"books","paragraphs","chapters"})assignMissingUuids(db,table,"id");
+   assignMissingUuids(db,"page_images","rowid");
+   db.execSQL("CREATE UNIQUE INDEX book_sync_uuid ON books(uuid)");
+   db.execSQL("CREATE UNIQUE INDEX paragraph_sync_uuid ON paragraphs(uuid)");
+   db.execSQL("CREATE UNIQUE INDEX chapter_sync_uuid ON chapters(uuid)");
+   db.execSQL("CREATE UNIQUE INDEX image_sync_uuid ON page_images(uuid)");
+   oldVersion=8;
+  }
+  if(oldVersion==8&&newVersion>=9){db.execSQL("ALTER TABLE books ADD COLUMN sync_content_dirty INTEGER NOT NULL DEFAULT 1");oldVersion=9;}
   if(oldVersion!=newVersion)throw new IllegalStateException("未対応の本棚データです");
+ }
+ private static void assignMissingUuids(SQLiteDatabase db,String table,String key){
+  try(Cursor cursor=db.rawQuery("SELECT "+key+" FROM "+table+" WHERE uuid IS NULL",null)){
+   while(cursor.moveToNext()){ContentValues values=new ContentValues();values.put("uuid",UUID.randomUUID().toString());db.update(table,values,key+"=?",new String[]{cursor.getString(0)});}
+  }
  }
 
  private static final class SavedLine {
@@ -133,7 +156,7 @@ final class BookStore extends SQLiteOpenHelper {
   try{
    boolean automatic=title.trim().isEmpty();
    String name=automatic?"撮影した本 "+new SimpleDateFormat("yyyy/MM/dd HH:mm",Locale.JAPAN).format(new Date(now)):title.trim();
-   ContentValues b=new ContentValues();b.put("title",name);b.put("auto_title",automatic?1:0);b.put("state","capturing");b.put("created_at",now);b.put("updated_at",now);
+   ContentValues b=new ContentValues();b.put("uuid",UUID.randomUUID().toString());b.put("title",name);b.put("auto_title",automatic?1:0);b.put("state","capturing");b.put("created_at",now);b.put("updated_at",now);
    long id=db.insertOrThrow("books",null,b);
    ContentValues ch=new ContentValues();ch.put("book_id",id);ch.put("start_seq",0);ch.put("title","冒頭");db.insertOrThrow("chapters",null,ch);
    db.setTransactionSuccessful();return id;
@@ -152,19 +175,19 @@ final class BookStore extends SQLiteOpenHelper {
    for(String raw:KindleProgressFilter.cleanLines(java.util.Arrays.asList(text.split("\\n",-1)))){
     String line=raw.trim();
     if(line.isEmpty())continue;
-    ContentValues p=new ContentValues();p.put("book_id",bookId);p.put("seq",seq++);p.put("screen",screen);p.put("text",line);p.put("hidden",imageData==null?0:1);
+    ContentValues p=new ContentValues();p.put("uuid",UUID.randomUUID().toString());p.put("book_id",bookId);p.put("seq",seq++);p.put("screen",screen);p.put("text",line);p.put("hidden",imageData==null?0:1);
     db.insertOrThrow("paragraphs",null,p);saved=true;
    }
-   if(!saved){ContentValues p=new ContentValues();p.put("book_id",bookId);p.put("seq",seq);p.put("screen",screen);p.put("text",imageData==null?"［文字を認識できませんでした］":"［画像］");p.put("hidden",imageData==null?0:1);db.insertOrThrow("paragraphs",null,p);}
+   if(!saved){ContentValues p=new ContentValues();p.put("uuid",UUID.randomUUID().toString());p.put("book_id",bookId);p.put("seq",seq);p.put("screen",screen);p.put("text",imageData==null?"［文字を認識できませんでした］":"［画像］");p.put("hidden",imageData==null?0:1);db.insertOrThrow("paragraphs",null,p);}
    if(imageData!=null){
     if(!imageDirectory.isDirectory()&&!imageDirectory.mkdirs())throw new IOException("画像保存先を作れません");
     image=imageFile(bookId,screen);File temp=new File(imageDirectory,bookId+"-"+screen+".tmp");
     try(FileOutputStream stream=new FileOutputStream(temp)){stream.write(imageData);}
     if(!temp.renameTo(image))throw new IOException("画像を保存できません");
-    ContentValues asset=new ContentValues();asset.put("book_id",bookId);asset.put("screen",screen);asset.put("start_seq",firstSeq);asset.put("kind",imageKind);
+    ContentValues asset=new ContentValues();asset.put("uuid",UUID.randomUUID().toString());asset.put("book_id",bookId);asset.put("screen",screen);asset.put("start_seq",firstSeq);asset.put("kind",imageKind);
     db.insertOrThrow("page_images",null,asset);
    }
-   ContentValues b=new ContentValues();b.put("updated_at",System.currentTimeMillis());b.put("last_hash",hash);db.update("books",b,"id=?",new String[]{Long.toString(bookId)});
+   ContentValues b=new ContentValues();b.put("updated_at",System.currentTimeMillis());b.put("last_hash",hash);b.put("sync_content_dirty",1);db.update("books",b,"id=?",new String[]{Long.toString(bookId)});
    if(detectedTitle!=null&&!detectedTitle.isEmpty()){
     ContentValues suggested=new ContentValues();suggested.put("title",detectedTitle);suggested.put("auto_title",0);
     db.update("books",suggested,"id=? AND auto_title=1",new String[]{Long.toString(bookId)});
@@ -175,14 +198,14 @@ final class BookStore extends SQLiteOpenHelper {
  }
  void finishCapture(long bookId,boolean complete){
   if(!chaptersEdited(bookId))rebuildChapters(bookId,false);
-  ContentValues b=new ContentValues();b.put("state",complete?"complete":"partial");b.put("updated_at",System.currentTimeMillis());
+  ContentValues b=new ContentValues();b.put("state",complete?"complete":"partial");b.put("updated_at",System.currentTimeMillis());b.put("sync_content_dirty",1);
   getWritableDatabase().update("books",b,"id=?",new String[]{Long.toString(bookId)});
  }
  void markPartial(long bookId){
   Book book=getBook(bookId);
   if(book==null||!"capturing".equals(book.state))return;
   if(!chaptersEdited(bookId))rebuildChapters(bookId,false);
-  ContentValues b=new ContentValues();b.put("state","partial");
+  ContentValues b=new ContentValues();b.put("state","partial");b.put("updated_at",System.currentTimeMillis());b.put("sync_content_dirty",1);
   getWritableDatabase().update("books",b,"id=? AND state='capturing'",new String[]{Long.toString(bookId)});
  }
  private boolean chaptersEdited(long bookId){
@@ -203,7 +226,7 @@ final class BookStore extends SQLiteOpenHelper {
     if(lastScreen>0)try(Cursor lines=db.rawQuery("SELECT text FROM paragraphs WHERE book_id=? AND screen=? ORDER BY seq",new String[]{Long.toString(bookId),Integer.toString(lastScreen)})){
      while(lines.moveToNext()){if(text.length()>0)text.append('\n');text.append(lines.getString(0));}
     }
-    ContentValues values=new ContentValues();values.put("state","capturing");values.put("updated_at",System.currentTimeMillis());
+    ContentValues values=new ContentValues();values.put("state","capturing");values.put("updated_at",System.currentTimeMillis());values.put("sync_content_dirty",1);
     db.update("books",values,"id=?",new String[]{Long.toString(bookId)});
     db.setTransactionSuccessful();return new CaptureCheckpoint(lastScreen,text.toString(),hash);
    }
@@ -216,22 +239,32 @@ final class BookStore extends SQLiteOpenHelper {
  }
  void renameBook(long bookId,String title){
   if(title.trim().isEmpty())throw new IllegalArgumentException("本の名前を入力してください");
-  ContentValues b=new ContentValues();b.put("title",title.trim());b.put("auto_title",0);b.put("updated_at",System.currentTimeMillis());
+  ContentValues b=new ContentValues();b.put("title",title.trim());b.put("auto_title",0);b.put("updated_at",System.currentTimeMillis());b.put("sync_content_dirty",1);
   getWritableDatabase().update("books",b,"id=?",new String[]{Long.toString(bookId)});
  }
  void deleteBook(long bookId){
-  SQLiteDatabase db=getWritableDatabase();List<File> images=new ArrayList<>();boolean deleted=false;db.beginTransaction();
+  SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
   try{
    try(Cursor c=db.rawQuery("SELECT state FROM books WHERE id=?",new String[]{Long.toString(bookId)})){
     if(!c.moveToFirst())throw new IllegalArgumentException("本が見つかりません");
     if("capturing".equals(c.getString(0)))throw new IllegalStateException("撮影中の本は一時停止してから削除してください");
    }
-   try(Cursor c=db.rawQuery("SELECT screen FROM page_images WHERE book_id=?",new String[]{Long.toString(bookId)})){
-    while(c.moveToNext())images.add(imageFile(bookId,c.getInt(0)));
-   }
-   if(db.delete("books","id=?",new String[]{Long.toString(bookId)})!=1)throw new IllegalStateException("本を削除できませんでした");
-   db.setTransactionSuccessful();deleted=true;
-  }finally{db.endTransaction();if(deleted)for(File image:images)image.delete();}
+   ContentValues values=new ContentValues();long now=System.currentTimeMillis();values.put("deleted_at",now);values.put("updated_at",now);values.put("sync_content_dirty",1);
+   if(db.update("books",values,"id=?",new String[]{Long.toString(bookId)})!=1)throw new IllegalStateException("本を削除できませんでした");
+   db.setTransactionSuccessful();
+  }finally{db.endTransaction();}
+ }
+ void restoreBook(long bookId){ContentValues values=new ContentValues();values.put("deleted_at",0);values.put("updated_at",System.currentTimeMillis());values.put("sync_content_dirty",1);getWritableDatabase().update("books",values,"id=?",new String[]{Long.toString(bookId)});}
+ List<Book> listDeletedBooks(){List<Book> out=new ArrayList<>();long cutoff=System.currentTimeMillis()-30L*24*60*60*1000;
+  try(Cursor c=getReadableDatabase().rawQuery("SELECT id,title,state,created_at,read_seq,read_offset FROM books WHERE deleted_at>? ORDER BY deleted_at DESC",new String[]{Long.toString(cutoff)})){
+   while(c.moveToNext())out.add(new Book(c.getLong(0),c.getString(1),c.getString(2),c.getLong(3),c.getInt(4),c.getInt(5)));}return out;}
+ void purgeExpiredDeleted(){long cutoff=System.currentTimeMillis()-30L*24*60*60*1000;SQLiteDatabase db=getWritableDatabase();List<File> files=new ArrayList<>();
+  try(Cursor c=db.rawQuery("SELECT p.book_id,p.screen FROM page_images p JOIN books b ON b.id=p.book_id WHERE b.deleted_at>0 AND b.deleted_at<?",new String[]{Long.toString(cutoff)})){
+   while(c.moveToNext())files.add(imageFile(c.getLong(0),c.getInt(1)));}
+  db.beginTransaction();try{
+   for(String table:new String[]{"paragraphs","chapters","page_images"})db.execSQL("DELETE FROM "+table+" WHERE book_id IN (SELECT id FROM books WHERE deleted_at>0 AND deleted_at<?)",new Object[]{cutoff});
+   db.setTransactionSuccessful();
+  }finally{db.endTransaction();}for(File file:files)file.delete();
  }
  Book getBook(long id){
   try(Cursor c=getReadableDatabase().rawQuery("SELECT id,title,state,created_at,read_seq,read_offset FROM books WHERE id=?",new String[]{Long.toString(id)})){
@@ -240,7 +273,7 @@ final class BookStore extends SQLiteOpenHelper {
  }
  List<Book> listBooks(){
   List<Book> out=new ArrayList<>();
-  try(Cursor c=getReadableDatabase().rawQuery("SELECT id,title,state,created_at,read_seq,read_offset FROM books ORDER BY updated_at DESC",null)){
+  try(Cursor c=getReadableDatabase().rawQuery("SELECT id,title,state,created_at,read_seq,read_offset FROM books WHERE deleted_at=0 ORDER BY updated_at DESC",null)){
    while(c.moveToNext())out.add(new Book(c.getLong(0),c.getString(1),c.getString(2),c.getLong(3),c.getInt(4),c.getInt(5)));
   }
   return out;
@@ -303,9 +336,21 @@ final class BookStore extends SQLiteOpenHelper {
   for(int seq:imageSeqs)db.update("paragraphs",hidden,"book_id=? AND seq=?",new String[]{Long.toString(bookId),Integer.toString(seq)});
   // Without a body match, keep existing chapter boundaries while excluding navigation text.
   if(preserveChapters||(result.tocCount>0&&result.matchedCount==0))return result;
+  List<OldChapter> previous=oldChapters(db,bookId);
   db.delete("chapters","book_id=?",new String[]{Long.toString(bookId)});
-  for(Chapter ch:result.chapters){ContentValues value=new ContentValues();value.put("book_id",bookId);value.put("start_seq",ch.startSeq);value.put("title",ch.title);db.insertOrThrow("chapters",null,value);}
+  for(Chapter ch:result.chapters){ContentValues value=new ContentValues();value.put("uuid",chapterUuid(previous,ch));value.put("book_id",bookId);value.put("start_seq",ch.startSeq);value.put("title",ch.title);db.insertOrThrow("chapters",null,value);}
   return result;
+ }
+ private static final class OldChapter{final int seq;final String title,uuid;boolean used;
+  OldChapter(int seq,String title,String uuid){this.seq=seq;this.title=title;this.uuid=uuid;}}
+ private static List<OldChapter> oldChapters(SQLiteDatabase db,long bookId){List<OldChapter> out=new ArrayList<>();
+  String field=db.getVersion()<8?"NULL":"uuid";
+  try(Cursor c=db.rawQuery("SELECT start_seq,title,"+field+" FROM chapters WHERE book_id=? ORDER BY start_seq",new String[]{Long.toString(bookId)})){
+   while(c.moveToNext())out.add(new OldChapter(c.getInt(0),c.getString(1),c.getString(2)));}return out;}
+ private static String chapterUuid(List<OldChapter> old,Chapter chapter){
+  for(OldChapter item:old)if(!item.used&&item.seq==chapter.startSeq&&item.uuid!=null){item.used=true;return item.uuid;}
+  for(OldChapter item:old)if(!item.used&&item.title.equals(chapter.title)&&item.uuid!=null){item.used=true;return item.uuid;}
+  return UUID.randomUUID().toString();
  }
  ChapterDetector.Analysis rebuildChapters(long bookId,boolean overrideManual){
   SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
@@ -315,7 +360,7 @@ final class BookStore extends SQLiteOpenHelper {
     if(c.getInt(0)!=0&&!overrideManual)return null;
    }
    ChapterDetector.Analysis result=rebuildInDatabase(db,bookId);
-   if(overrideManual&&result!=null&&(result.tocCount==0||result.matchedCount>0)){ContentValues b=new ContentValues();b.put("chapters_edited",0);db.update("books",b,"id=?",new String[]{Long.toString(bookId)});}
+   if(overrideManual&&result!=null&&(result.tocCount==0||result.matchedCount>0)){ContentValues b=new ContentValues();b.put("chapters_edited",0);b.put("sync_content_dirty",1);b.put("updated_at",System.currentTimeMillis());db.update("books",b,"id=?",new String[]{Long.toString(bookId)});}
    db.setTransactionSuccessful();return result;
   }finally{db.endTransaction();}
  }
@@ -332,14 +377,15 @@ final class BookStore extends SQLiteOpenHelper {
   for(Chapter ch:chapters){if(ch.startSeq<=previous||ch.title.trim().isEmpty())throw new IllegalArgumentException("章の位置または名前が正しくありません");previous=ch.startSeq;}
   SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
   try{
+   List<OldChapter> previousChapters=oldChapters(db,bookId);
    db.delete("chapters","book_id=?",new String[]{Long.toString(bookId)});
-   for(Chapter ch:chapters){ContentValues v=new ContentValues();v.put("book_id",bookId);v.put("start_seq",ch.startSeq);v.put("title",ch.title.trim());db.insertOrThrow("chapters",null,v);}
+   for(Chapter ch:chapters){ContentValues v=new ContentValues();v.put("uuid",chapterUuid(previousChapters,ch));v.put("book_id",bookId);v.put("start_seq",ch.startSeq);v.put("title",ch.title.trim());db.insertOrThrow("chapters",null,v);}
    db.setTransactionSuccessful();
   }finally{db.endTransaction();}
  }
  void editChapters(long bookId,List<Chapter> chapters){
   replaceChapters(bookId,chapters);
-  ContentValues values=new ContentValues();values.put("chapters_edited",1);
+  ContentValues values=new ContentValues();values.put("chapters_edited",1);values.put("updated_at",System.currentTimeMillis());values.put("sync_content_dirty",1);
   getWritableDatabase().update("books",values,"id=?",new String[]{Long.toString(bookId)});
  }
  void saveProgress(long bookId,int seq,int offset){
@@ -349,17 +395,17 @@ final class BookStore extends SQLiteOpenHelper {
  long importBook(BookArchive.Imported imported){
   SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
   try{
-   long now=System.currentTimeMillis();ContentValues b=new ContentValues();b.put("title",imported.title);b.put("state","complete");b.put("created_at",now);b.put("updated_at",now);
+   long now=System.currentTimeMillis();ContentValues b=new ContentValues();b.put("uuid",UUID.randomUUID().toString());b.put("title",imported.title);b.put("state","complete");b.put("created_at",now);b.put("updated_at",now);
    long id=db.insertOrThrow("books",null,b);int seq=0;
    for(BookArchive.ImportedChapter chapter:imported.chapters){
-    ContentValues ch=new ContentValues();ch.put("book_id",id);ch.put("start_seq",seq);ch.put("title",chapter.title);db.insertOrThrow("chapters",null,ch);
+    ContentValues ch=new ContentValues();ch.put("uuid",UUID.randomUUID().toString());ch.put("book_id",id);ch.put("start_seq",seq);ch.put("title",chapter.title);db.insertOrThrow("chapters",null,ch);
     boolean saved=false;
     for(String raw:KindleProgressFilter.cleanLines(chapter.paragraphs)){
      String line=raw.trim();
      if(line.isEmpty())continue;
-     ContentValues p=new ContentValues();p.put("book_id",id);p.put("seq",seq++);p.put("screen",0);p.put("text",line);db.insertOrThrow("paragraphs",null,p);saved=true;
+     ContentValues p=new ContentValues();p.put("uuid",UUID.randomUUID().toString());p.put("book_id",id);p.put("seq",seq++);p.put("screen",0);p.put("text",line);db.insertOrThrow("paragraphs",null,p);saved=true;
     }
-    if(!saved){ContentValues p=new ContentValues();p.put("book_id",id);p.put("seq",seq++);p.put("screen",0);p.put("text","［本文がありません］");db.insertOrThrow("paragraphs",null,p);}
+    if(!saved){ContentValues p=new ContentValues();p.put("uuid",UUID.randomUUID().toString());p.put("book_id",id);p.put("seq",seq++);p.put("screen",0);p.put("text","［本文がありません］");db.insertOrThrow("paragraphs",null,p);}
    }
    db.setTransactionSuccessful();return id;
   }finally{db.endTransaction();}
