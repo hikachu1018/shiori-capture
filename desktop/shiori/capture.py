@@ -88,17 +88,22 @@ def kindle_window() -> int:
 
 
 def active_kindle_window(handle: int, process_id: int = 0) -> int:
-    current = USER32.GetForegroundWindow()
-    current_process = window_process_id(current) if current else 0
-    if (current == handle and (not process_id or current_process == process_id)) or (process_id and current_process == process_id):
-        return current
-    executable = window_executable(current)
-    if executable == "kindle.exe":
-        return current
-    title = ctypes.create_unicode_buffer(512)
-    if current:
-        USER32.GetWindowTextW(current, title, len(title))
-    found = executable or title.value or "無題"
+    found = "無題"
+    for attempt in range(3):
+        current = USER32.GetForegroundWindow()
+        if current:
+            current_process = window_process_id(current)
+            if ((current == handle and (not process_id or current_process == process_id))
+                    or (process_id and current_process == process_id)):
+                return current
+            executable = window_executable(current)
+            if executable == "kindle.exe":
+                return current
+            title = ctypes.create_unicode_buffer(512)
+            USER32.GetWindowTextW(current, title, len(title))
+            found = executable or title.value or "無題"
+        if attempt < 2:
+            time.sleep(.15)
     raise CaptureUnavailable(f"Kindle以外の画面が前面になりました（{found}）")
 
 
@@ -225,6 +230,7 @@ def build_chapters(book: dict) -> None:
     paragraphs = book["paragraphs"]
     toc_titles = [p["text"].strip("・.． 　0123456789０１２３４５６７８９") for p in paragraphs
                   if p.get("page_kind") == "toc" and p["text"] not in ("目次", "もくじ")]
+    existing_ids = {chapter["start_seq"]: chapter["uuid"] for chapter in book["chapters"]}
     chapters = []
     for paragraph in paragraphs:
         if paragraph.get("hidden"):
@@ -233,11 +239,13 @@ def build_chapters(book: dict) -> None:
             matched = next((title for title in toc_titles if len(title) >= 3 and (title == line or title in line or line in title)), None)
             if HEADING.match(line) or matched:
                 matched = matched or line
-                chapters.append({"uuid": str(uuid.uuid4()), "start_seq": paragraph["seq"], "title": matched})
+                chapters.append({"uuid": existing_ids.get(paragraph["seq"], str(uuid.uuid4())),
+                                 "start_seq": paragraph["seq"], "title": matched})
                 break
     if not chapters and paragraphs:
         first = next((p for p in paragraphs if not p.get("hidden")), paragraphs[0])
-        chapters.append({"uuid": str(uuid.uuid4()), "start_seq": first["seq"], "title": "冒頭"})
+        chapters.append({"uuid": existing_ids.get(first["seq"], str(uuid.uuid4())),
+                         "start_seq": first["seq"], "title": "冒頭"})
     book["chapters"] = chapters
 
 
@@ -315,17 +323,20 @@ class CaptureSession:
             USER32.keybd_event(VK_NEXT, 0, KEYEVENTF_KEYUP, 0)
             deadline = time.monotonic() + 4
             candidate = None
+            candidate_count = 0
             while time.monotonic() < deadline and not self.stop.is_set():
                 if self.stop.wait(.18):
                     return None
                 image = visible_page(self.handle, self.process_id)
                 fingerprint = page_fingerprint(image)
                 if fingerprint != previous:
-                    if candidate == fingerprint:
+                    candidate_count = candidate_count + 1 if candidate == fingerprint else 1
+                    if candidate_count >= 3:
                         return image
                     candidate = fingerprint
                 else:
                     candidate = None
+                    candidate_count = 0
             if candidate is not None:
                 raise CaptureUnavailable("ページ切り替え中の表示が安定しませんでした。保存済み画面から再開してください")
         return None
@@ -381,4 +392,9 @@ class CaptureSession:
             self.notice(self.state.stopped or "一時停止しました。保存済みの画面から再開できます")
         except Exception as exc:
             self.state.stopped = str(exc)
+            if self.state.pages:
+                try:
+                    self.library.update(self.book_id, build_chapters)
+                except Exception:
+                    pass
             self.notice(f"撮影を停止しました: {exc}（保存済み {self.state.pages}画面・処理待ち {int(self.pending_path.exists())}画面）")
