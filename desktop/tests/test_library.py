@@ -7,8 +7,11 @@ import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
+from unittest import mock
 
-from shiori.capture import build_chapters, clean_text
+from PIL import Image
+
+from shiori.capture import CaptureSession, build_chapters, clean_text
 from shiori.library import Conflict, Library, new_book
 from shiori.sync import SyncServer
 
@@ -108,6 +111,29 @@ class LibraryTests(unittest.TestCase):
                 self.assertTrue(json.load(response)["token"])
         finally:
             server.close()
+
+    def test_capture_stops_after_unchanged_final_page(self):
+        book = new_book("末尾の検証")
+        self.library.put(book, 0)
+        pages = iter([Image.new("RGB", (300, 300), "white")])
+        final_page = Image.new("RGB", (300, 300), "black")
+        def visible(_handle):
+            return next(pages, final_page)
+        messages = []
+        session = CaptureSession(self.library, book["uuid"], True, messages.append)
+        session.stop.wait = lambda _delay: False
+        window = mock.Mock()
+        window.GetForegroundWindow.return_value = 1
+        with mock.patch("shiori.capture.kindle_window", return_value=1), \
+             mock.patch("shiori.capture.visible_page", side_effect=visible), \
+             mock.patch("shiori.capture.accessible_text", return_value="これは画面ごとの本文を模擬した、二十文字以上の検証用テキストです。"), \
+             mock.patch("shiori.capture.USER32", window), \
+             mock.patch("shiori.capture.time.sleep"):
+            session.run()
+        saved = self.library.get(book["uuid"])[1]
+        self.assertEqual(saved["state"], "complete")
+        self.assertEqual({row["screen"] for row in saved["paragraphs"]}, {1, 2})
+        self.assertTrue(any("末尾" in message for message in messages))
 
 
 if __name__ == "__main__":
