@@ -4,7 +4,7 @@ on:
   pull_request:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,6 +19,9 @@ jobs:
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Test and build unsigned release
         run: ./gradlew --no-daemon testDebugUnitTest assembleRelease
+      - name: Keep universal build for local signing
+        if: github.ref == 'refs/heads/feature/windows-sync'
+        run: cp app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/shiori-universal-unsigned.apk"
       - uses: actions/upload-artifact@v7
         with:
           name: shiori-capture-unsigned
@@ -31,3 +34,20 @@ jobs:
           name: shiori-capture-arm64-unsigned
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
+      - name: Export unsigned APKs for local signing
+        if: github.ref == 'refs/heads/feature/windows-sync'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir "$RUNNER_TEMP/shiori-unsigned"
+          cp "$RUNNER_TEMP/shiori-universal-unsigned.apk" "$RUNNER_TEMP/shiori-unsigned/universal-unsigned.apk"
+          cp app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/shiori-unsigned/galaxy-arm64-unsigned.apk"
+          cd "$RUNNER_TEMP/shiori-unsigned"
+          git init -b ci-unsigned-0.5.0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add *.apk
+          git commit -m 'Temporary 0.5.0 unsigned builds for local signing'
+          git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          gh auth setup-git
+          git push --force origin HEAD:refs/heads/ci-unsigned-0.5.0
