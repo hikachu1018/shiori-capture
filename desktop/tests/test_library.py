@@ -11,7 +11,8 @@ from unittest import mock
 
 from PIL import Image
 
-from shiori.capture import CaptureSession, build_chapters, clean_text
+from shiori.app import App
+from shiori.capture import CaptureSession, build_chapters, clean_text, kindle_window
 from shiori.library import Conflict, Library, new_book
 from shiori.sync import SyncServer
 
@@ -134,6 +135,37 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(saved["state"], "complete")
         self.assertEqual({row["screen"] for row in saved["paragraphs"]}, {1, 2})
         self.assertTrue(any("末尾" in message for message in messages))
+
+    def test_kindle_with_empty_window_title_is_detected_by_process(self):
+        with mock.patch("shiori.capture.USER32") as user, \
+             mock.patch("shiori.capture.window_executable", return_value="kindle.exe"):
+            user.GetForegroundWindow.return_value = 123
+            user.GetWindowTextW.side_effect = lambda _handle, title, _size: setattr(title, "value", "")
+            self.assertEqual(kindle_window(), 123)
+
+    def test_capture_button_can_retry_after_failed_thread(self):
+        app = App.__new__(App)
+        app.selected = "book-id"
+        app.capture_pending = False
+        app.library = self.library
+        app.vertical = mock.Mock()
+        app.vertical.get.return_value = True
+        app.status = mock.Mock()
+        app.root = mock.Mock()
+        app.notice = lambda _message: None
+        app.session = None
+        app.capture_thread = None
+        sessions = [mock.Mock(), mock.Mock()]
+        for session in sessions:
+            session.stop.is_set.return_value = False
+        thread = mock.Mock()
+        thread.is_alive.return_value = False
+        with mock.patch("shiori.app.CaptureSession", side_effect=sessions) as session_factory, \
+             mock.patch("shiori.app.threading.Thread", return_value=thread):
+            app.capture()
+            app.root.after.call_args.args[1]()
+            app.capture()
+            self.assertEqual(session_factory.call_count, 2)
 
 
 if __name__ == "__main__":

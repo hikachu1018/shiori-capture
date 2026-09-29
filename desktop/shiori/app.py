@@ -26,12 +26,13 @@ def app_data() -> Path:
 class App:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("しおり Capture PC 0.5.0")
+        self.root.title("しおり Capture PC 0.5.1")
         self.root.geometry("1000x710")
         self.library = Library(app_data() / "books.db")
         self.server = SyncServer(self.library, app_data())
         self.server.start()
         self.session = None
+        self.capture_pending = False
         self.selected = None
         self.photo = None
 
@@ -85,7 +86,12 @@ class App:
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
     def notice(self, message: str):
-        self.root.after(0, lambda: (self.status.set(message), self.refresh()))
+        def show():
+            self.status.set(message)
+            self.refresh()
+            if message.startswith("撮影を停止しました:"):
+                messagebox.showerror("撮影を開始できません", message.removeprefix("撮影を停止しました: "), parent=self.root)
+        self.root.after(0, show)
 
     def refresh(self):
         selected = self.selected
@@ -212,20 +218,28 @@ class App:
         if not self.selected:
             messagebox.showinfo("本を選んでください", "先に『新しい本』を作成してください")
             return
-        if self.session and not self.session.stop.is_set():
+        if self.capture_pending:
+            self.status.set("撮影開始まで待機中です。Kindleを前面にしてください")
+            return
+        if getattr(self, "capture_thread", None) and self.capture_thread.is_alive():
+            self.status.set("撮影中です。一時停止してから再開してください")
             return
         self.session = CaptureSession(self.library, self.selected, self.vertical.get(), self.notice)
+        self.capture_pending = True
+        session = self.session
         self.status.set("5秒後に撮影します。Kindleの読書画面を前面にしてください")
         def launch():
-            if self.session and not self.session.stop.is_set():
-                self.capture_thread = threading.Thread(target=self.session.run, daemon=True, name="shiori-capture")
-                self.capture_thread.start()
+            self.capture_pending = False
+            if session.stop.is_set():
+                return
+            self.capture_thread = threading.Thread(target=session.run, daemon=True, name="shiori-capture")
+            self.capture_thread.start()
         self.root.after(5000, launch)
 
     def pause(self):
         if self.session:
             self.session.request_pause()
-            self.status.set("処理中の画面を保存して停止しています…")
+            self.status.set("撮影開始を取り消しました" if self.capture_pending else "処理中の画面を保存して停止しています…")
 
     def delete(self):
         book = self.book()

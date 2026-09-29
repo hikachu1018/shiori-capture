@@ -41,16 +41,45 @@ class _Rect(ctypes.Structure):
 
 if USER32 is not None:
     USER32.GetWindowRect.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Rect)]
+    USER32.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+
+
+def window_executable(handle: int) -> str:
+    """Resolve the foreground app even when its window has no caption."""
+    if USER32 is None:
+        return ""
+    process_id = ctypes.c_ulong()
+    USER32.GetWindowThreadProcessId(handle, ctypes.byref(process_id))
+    if not process_id.value:
+        return ""
+    kernel = ctypes.windll.kernel32
+    kernel.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+    kernel.OpenProcess.restype = ctypes.c_void_p
+    kernel.QueryFullProcessImageNameW.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_ulong)]
+    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+    process = kernel.OpenProcess(0x1000, 0, process_id.value)
+    if not process:
+        return ""
+    try:
+        filename = ctypes.create_unicode_buffer(32768)
+        size = ctypes.c_ulong(len(filename))
+        if kernel.QueryFullProcessImageNameW(process, 0, filename, ctypes.byref(size)):
+            return filename.value.rsplit("\\", 1)[-1].lower()
+    finally:
+        kernel.CloseHandle(process)
+    return ""
 
 
 def kindle_window() -> int:
     if USER32 is None:
         raise CaptureUnavailable("Windows 11で実行してください")
     handle = USER32.GetForegroundWindow()
+    if not handle:
+        raise CaptureUnavailable("Kindleの読書画面を前面に開いてください")
     title = ctypes.create_unicode_buffer(512)
     USER32.GetWindowTextW(handle, title, len(title))
-    if "kindle" not in title.value.lower():
-        raise CaptureUnavailable("Kindleの読書画面を前面に開いてください")
+    if "kindle" not in title.value.lower() and window_executable(handle) != "kindle.exe":
+        raise CaptureUnavailable("Kindleの読書画面を前面に開いてください（検出した画面: " + (title.value or "無題") + "）")
     return handle
 
 

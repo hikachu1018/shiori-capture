@@ -1,0 +1,37 @@
+name: Release PC 0.5.1
+on:
+  push:
+    tags: [v0.5.1]
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install OCR and packager
+        shell: pwsh
+        run: |
+          python -m venv desktop/.venv
+          desktop/.venv/Scripts/python.exe -m pip install --upgrade pip
+          desktop/.venv/Scripts/python.exe -m pip install -r desktop/requirements.txt
+      - name: Test PC behavior
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = 'desktop'
+          desktop/.venv/Scripts/python.exe -m unittest discover -s desktop/tests -v
+      - name: Build Windows package
+        shell: pwsh
+        run: ./desktop/build.ps1
+      - name: Publish PC hotfix
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $zip = 'desktop/dist/ShioriCapture-0.5.1-windows.zip'
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          "$hash  ShioriCapture-0.5.1-windows.zip" | Set-Content -Encoding ascii 'desktop/dist/SHA256-windows-0.5.1.txt'
+          gh release create v0.5.1 $zip desktop/dist/SHA256-windows-0.5.1.txt --verify-tag --title 'しおり Capture PC 0.5.1' --notes-file .github/RELEASE_NOTES_0.5.1.md

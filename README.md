@@ -1,4 +1,4 @@
-# しおり Capture 0.5.0
+# しおり Capture 0.5.0 / PC版 0.5.1
 
 Kindleの表示画面をAndroidまたはWindows 11で読み取り、日本語の本文を本棚へ保存します。Galaxyアプリでは章ごとにRSVP読書できます。PC版とGalaxy版は同じWi-Fi上で同期し、PCが起動中でGalaxyのアプリが開いている間だけ通信します。読書と保存済み本文の閲覧はオフラインで動作します。Android 11以降が必要です。
 
@@ -11,7 +11,7 @@ Kindleの表示画面をAndroidまたはWindows 11で読み取り、日本語の
 
 PC版は `desktop` 以下にあります。開発時はPython 3.12で `desktop/requirements.txt` をインストールし、リポジトリを作業ディレクトリとして `PYTHONPATH=desktop python -m shiori.app` で起動します。Windows配布用ZIPは `desktop/build.ps1` で作成します。OCRモデルを含めるため、ビルド環境にはインターネット接続が必要です。保存データとペアリング用の証明書はWindowsの `%LOCALAPPDATA%\ShioriCapture` に置きます。GitHubには含めません。
 
-配布版のPC ZIPは[0.5.0 Release](https://github.com/hikachu1018/shiori-capture/releases/tag/v0.5.0)から取得します。ZIPを展開し、フォルダー内の `ShioriCapture.exe` を起動してください。OCRモデルを同梱するため、ZIPは約406MBです。
+配布版のPC ZIPは[PC版0.5.1 Release](https://github.com/hikachu1018/shiori-capture/releases/tag/v0.5.1)から取得します。ZIPを展開し、フォルダー内の `ShioriCapture.exe` を起動してください。OCRモデルを同梱するため、ZIPは約406MBです。PC版0.5.1はGalaxy版0.5.0と同期できます。PC版0.5.0で撮影開始後にエラーが出た場合、更新後に同じ本を選んで再試行できます。
 
 本を削除すると次回同期で両端末の本棚から隠れ、30日以内は復元できます。両端末で同じ本を変更した場合、Galaxy側の変更は「競合した変更」という別の本として残ります。Galaxy版の「PCと同期」→「競合した変更を選ぶ」で両方の本文冒頭を比較し、残す版を選べます。別々に撮影した同じ本は、PC版の「同じ本を統合」で内容を確認してから統合できます。
 
