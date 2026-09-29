@@ -209,6 +209,19 @@ class LibraryTests(unittest.TestCase):
         app.refresh()
         self.assertEqual(app.screen.__setitem__.call_args.args, ("values", [1, 2, 3]))
 
+    def test_reselecting_same_book_does_not_reset_preview(self):
+        app = App.__new__(App)
+        app.selected = "same-book"
+        app.displayed_book_id = "same-book"
+        app.books = mock.Mock()
+        app.books.curselection.return_value = ()
+        app.book = mock.Mock()
+        app.title = mock.Mock()
+        app.screen = mock.Mock()
+        app.select_book()
+        app.book.assert_not_called()
+        app.screen.set.assert_not_called()
+
     def test_kindle_with_empty_window_title_is_detected_by_process(self):
         with mock.patch("shiori.capture.USER32") as user, \
              mock.patch("shiori.capture.window_executable", return_value="kindle.exe"):
@@ -233,6 +246,17 @@ class LibraryTests(unittest.TestCase):
             self.assertFalse(acquire_single_instance())
             system.kernel32.CloseHandle.assert_called_once_with(321)
             system.user32.MessageBoxW.assert_called_once()
+
+    def test_old_pc_instance_port_conflict_is_reported(self):
+        with mock.patch("shiori.app.tk.Tk") as root, \
+             mock.patch("shiori.app.Library") as library, \
+             mock.patch("shiori.app.SyncServer", side_effect=OSError("port busy")), \
+             mock.patch("shiori.app.messagebox.showerror") as show_error:
+            with self.assertRaises(SystemExit):
+                App()
+            self.assertIn("旧版", show_error.call_args.args[1])
+            library.return_value.close.assert_called_once()
+            root.return_value.destroy.assert_called_once()
 
     def test_repeated_accessibility_text_uses_ocr_for_new_page(self):
         book = new_book("本文の検証")

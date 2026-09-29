@@ -52,11 +52,18 @@ class App:
         self.root.title("しおり Capture PC 0.5.2")
         self.root.geometry("1000x710")
         self.library = Library(app_data() / "books.db")
-        self.server = SyncServer(self.library, app_data())
+        try:
+            self.server = SyncServer(self.library, app_data())
+        except OSError as exc:
+            messagebox.showerror("起動できません", "同期ポートを使用できません。旧版を含む他のしおり Capture PCを終了してください。\n" + str(exc), parent=self.root)
+            self.library.close()
+            self.root.destroy()
+            raise SystemExit(1) from exc
         self.server.start()
         self.session = None
         self.capture_pending = False
         self.selected = None
+        self.displayed_book_id = None
         self.photo = None
 
         bar = ttk.Frame(self.root, padding=10)
@@ -164,9 +171,12 @@ class App:
         selection = self.books.curselection()
         if selection:
             self.selected = self.items[selection[0]]["uuid"]
+        if self.selected == getattr(self, "displayed_book_id", None):
+            return
         book = self.book()
         if not book:
             return
+        self.displayed_book_id = self.selected
         self.title.set(book["title"])
         screens = sorted({p["screen"] for p in book["paragraphs"]})
         self.screen["values"] = screens
