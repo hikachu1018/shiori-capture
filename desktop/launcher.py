@@ -1,7 +1,22 @@
 import sys
 import traceback
 
-if len(sys.argv) == 4 and sys.argv[1] == "--verify-ocr":
+if len(sys.argv) == 3 and sys.argv[1] == "--verify-gui":
+    from pathlib import Path
+
+    destination = Path(sys.argv[2])
+    try:
+        import tkinter as tk
+
+        root = tk.Tk()
+        root.withdraw()
+        root.update_idletasks()
+        root.destroy()
+        destination.write_text("Tkinter GUI ready\n", encoding="utf-8")
+    except Exception:
+        destination.write_text(traceback.format_exc(), encoding="utf-8")
+        sys.exit(1)
+elif len(sys.argv) == 4 and sys.argv[1] == "--verify-ocr":
     from pathlib import Path
     from PIL import Image
     from shiori.capture import JapaneseOcr
