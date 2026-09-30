@@ -9,7 +9,7 @@ Kindleの表示画面をAndroidまたはWindows 11で読み取り、日本語の
 3. PC版で画面ごとの本文、章名、表紙・挿絵を確認します。画面ごとのOCR本文を修正できます。誤認識や目次と一致しない章は手動で直してください。
 4. 両端末を同じWi-Fiへ接続し、PC版の「同期の接続情報」を開きます。Galaxy版「本棚の管理」→「PCと同期」でQRを読み取ります。QRが使えない場合は、PCに表示される接続情報を貼り付けます。初回ペアリング後は両アプリを開いている間に自動同期します。
 
-PC版は `desktop` 以下にあります。開発時はPython 3.12で `desktop/requirements.txt` をインストールし、リポジトリを作業ディレクトリとして `PYTHONPATH=desktop python -m shiori.app` で起動します。Windows配布用ZIPは `desktop/build.ps1` で作成します。OCRモデルを含めるため、ビルド環境にはインターネット接続が必要です。保存データとペアリング用の証明書はWindowsの `%LOCALAPPDATA%\ShioriCapture` に置きます。GitHubには含めません。
+PC版は `desktop` 以下にあります。開発時はPython 3.12で `desktop/requirements.txt` をインストールし、リポジトリを作業ディレクトリとして `PYTHONPATH=desktop python -m shiori.app` で起動します。Windows配布用ZIPは `desktop/build.ps1` で作成します。OCRモデルを含めるため、ビルド環境にはインターネット接続が必要です。既存のモデルキャッシュを利用する場合は、ビルド前に環境変数 `SHIORI_BUILD_CACHE` へそのフォルダーを指定できます。保存データとペアリング用の証明書はWindowsの `%LOCALAPPDATA%\ShioriCapture` に置きます。GitHubには含めません。
 
 配布版のPC ZIPは[PC版0.5.2 Release](https://github.com/hikachu1018/shiori-capture/releases/tag/v0.5.2)から取得します。ZIPを展開し、フォルダー内の `ShioriCapture.exe` を起動してください。保存済みの本棚は引き継ぎ、Galaxy版0.5.0とも同期できます。旧PC版が起動している場合は終了してから新版を開いてください。新版同士の二重起動は防止されます。
 

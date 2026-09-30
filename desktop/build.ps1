@@ -3,8 +3,9 @@ $project = Split-Path -Parent $PSScriptRoot
 $python = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $python)) { throw '先にPython 3.12で desktop/.venv を作成してください。' }
 $env:PYTHONPATH = $PSScriptRoot
-$env:PADDLE_PDX_CACHE_HOME = Join-Path $PSScriptRoot '.cache'
-$env:PYINSTALLER_CONFIG_DIR = Join-Path $PSScriptRoot '.cache\pyinstaller'
+$buildCache = if ($env:SHIORI_BUILD_CACHE) { $env:SHIORI_BUILD_CACHE } else { Join-Path $PSScriptRoot '.cache' }
+$env:PADDLE_PDX_CACHE_HOME = $buildCache
+$env:PYINSTALLER_CONFIG_DIR = Join-Path $buildCache 'pyinstaller'
 $env:DISABLE_MODEL_SOURCE_CHECK = 'True'
 $env:PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK = 'True'
 & $python -c "from PIL import Image; from shiori.capture import JapaneseOcr; JapaneseOcr().read(Image.new('RGB',(300,180),'white'),False)"

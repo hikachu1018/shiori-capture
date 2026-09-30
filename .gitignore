@@ -18,5 +18,6 @@ desktop/*.db
 desktop/*.pem
 desktop/*.spec
 desktop/.cache/
+desktop/.cache-build-*/
 .android-sdk/
 .kindle-install.exe
