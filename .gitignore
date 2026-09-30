@@ -10,6 +10,7 @@ local.properties
 *.pdf
 captures/
 desktop/.venv/
+desktop/.venv-release-*/
 desktop/dist/
 desktop/build/
 desktop/.pytest_cache/
