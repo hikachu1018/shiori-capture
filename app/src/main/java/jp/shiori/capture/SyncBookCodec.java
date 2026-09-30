@@ -57,10 +57,14 @@ final class SyncBookCodec {
  static long importBook(BookStore store,JSONObject book,int revision)throws Exception{
   validate(book);SQLiteDatabase db=store.getWritableDatabase();String uuid=book.getString("uuid");long now=System.currentTimeMillis();
   List<File> oldImages=new ArrayList<>();List<File> newImages=new ArrayList<>();List<File> staged=new ArrayList<>();
-  Map<File,File> backups=new HashMap<>();long id=-1;boolean success=false;db.beginTransaction();
+  Map<File,File> backups=new HashMap<>();List<File> installed=new ArrayList<>();long id=-1;boolean ready=false,committed=false;db.beginTransaction();
   try{
    try(Cursor c=db.rawQuery("SELECT id FROM books WHERE uuid=?",new String[]{uuid})){if(c.moveToFirst())id=c.getLong(0);}
-   if(id>0){try(Cursor c=db.rawQuery("SELECT screen FROM page_images WHERE book_id=?",new String[]{Long.toString(id)})){while(c.moveToNext())oldImages.add(store.imageFile(id,c.getInt(0)));}
+   if(id>0){
+    try(Cursor c=db.rawQuery("SELECT state FROM books WHERE id=?",new String[]{Long.toString(id)})){
+     if(c.moveToFirst()&&"capturing".equals(c.getString(0)))throw new IllegalStateException("撮影中の本は同期で上書きできません");
+    }
+    try(Cursor c=db.rawQuery("SELECT screen FROM page_images WHERE book_id=?",new String[]{Long.toString(id)})){while(c.moveToNext())oldImages.add(store.imageFile(id,c.getInt(0)));}
     db.delete("paragraphs","book_id=?",new String[]{Long.toString(id)});db.delete("chapters","book_id=?",new String[]{Long.toString(id)});db.delete("page_images","book_id=?",new String[]{Long.toString(id)});
    }
    ContentValues b=new ContentValues();b.put("uuid",uuid);b.put("title",book.getString("title"));b.put("state",book.getString("state"));
@@ -84,15 +88,19 @@ final class SyncBookCodec {
    }
    for(File old:oldImages)if(old.isFile()){File backup=new File(old.getParentFile(),old.getName()+".backup-"+UUID.randomUUID());
     if(!old.renameTo(backup))throw new IOException("保存画像を退避できません");backups.put(old,backup);}
-   for(int i=0;i<staged.size();i++)if(!staged.get(i).renameTo(newImages.get(i)))throw new IOException("画像を保存できません");
-   db.setTransactionSuccessful();success=true;return id;
+   for(int i=0;i<staged.size();i++){
+    if(!staged.get(i).renameTo(newImages.get(i)))throw new IOException("画像を保存できません");
+    installed.add(newImages.get(i));
+   }
+   db.setTransactionSuccessful();ready=true;
   }finally{
-   try{db.endTransaction();}finally{
+   try{db.endTransaction();committed=ready;}finally{
     for(File temp:staged)temp.delete();
-    if(success){for(File backup:backups.values())backup.delete();}
-    else{for(File file:newImages)file.delete();for(Map.Entry<File,File> entry:backups.entrySet())entry.getValue().renameTo(entry.getKey());}
+    if(committed){for(File backup:backups.values())backup.delete();}
+    else{for(File file:installed)file.delete();for(Map.Entry<File,File> entry:backups.entrySet())entry.getValue().renameTo(entry.getKey());}
    }
   }
+  return id;
  }
  static long saveConflictCopy(BookStore store,long id)throws Exception{
   JSONObject book=exportBook(store,id);book.put("uuid",UUID.randomUUID().toString());book.put("title",book.getString("title")+"（競合した変更）");

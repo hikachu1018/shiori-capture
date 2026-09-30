@@ -69,4 +69,28 @@ public class ChapterDetectorTest {
   assertEquals("遠い街の話",result.chapters.get(1).title);
   assertTrue(result.hiddenSeqs.contains(0));
  }
+ @Test public void doesNotTreatBodyMentionOfChapterAsItsStart(){
+  List<BookStore.Paragraph> lines=Arrays.asList(
+   new BookStore.Paragraph(0,1,"目次"),
+   new BookStore.Paragraph(1,1,"第一章 はじまり"),
+   new BookStore.Paragraph(2,1,"第二章 次の話"),
+   new BookStore.Paragraph(3,2,"第一章 はじまり"),
+   new BookStore.Paragraph(4,2,"第二章では次の話について述べます。"),
+   new BookStore.Paragraph(5,3,"第二章 次の話"));
+  ChapterDetector.Analysis result=ChapterDetector.analyze(lines);
+  assertEquals(2,result.matchedCount);
+  assertEquals(5,result.chapters.get(1).startSeq);
+ }
+ @Test public void doesNotMatchUnnumberedTitleInsideBodySentence(){
+  List<BookStore.Paragraph> lines=Arrays.asList(
+   new BookStore.Paragraph(0,1,"目次"),
+   new BookStore.Paragraph(1,1,"はじめに"),
+   new BookStore.Paragraph(2,1,"遠い街の話"),
+   new BookStore.Paragraph(3,2,"はじめに"),
+   new BookStore.Paragraph(4,2,"遠い街の話です"),
+   new BookStore.Paragraph(5,3,"遠い街の話"));
+  ChapterDetector.Analysis result=ChapterDetector.analyze(lines);
+  assertEquals(2,result.matchedCount);
+  assertEquals(5,result.chapters.get(1).startSeq);
+ }
 }

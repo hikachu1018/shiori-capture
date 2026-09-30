@@ -11,6 +11,7 @@ import java.security.MessageDigest;
 import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
@@ -21,6 +22,7 @@ import org.json.JSONObject;
 
 /** Foreground-only, TLS certificate-pinned sync with one paired Windows PC. */
 final class SyncClient {
+ private static final AtomicBoolean syncInProgress=new AtomicBoolean();
  static final class Connection {
   final String host,fingerprint,code;
   Connection(String host,String fingerprint,String code){this.host=host;this.fingerprint=fingerprint;this.code=code;}
@@ -71,6 +73,10 @@ final class SyncClient {
  }
  static boolean isPaired(Context context){return !Store.prefs(context).getString("syncToken","").isEmpty();}
  static String sync(Context context)throws Exception{
+  if(!syncInProgress.compareAndSet(false,true))return "同期中です";
+  try{return syncOnce(context);}finally{syncInProgress.set(false);}
+ }
+ private static String syncOnce(Context context)throws Exception{
   SharedPreferences prefs=Store.prefs(context);String host=prefs.getString("syncHost","");String pin=prefs.getString("syncPin","");String token=prefs.getString("syncToken","");
   if(host.isEmpty()||token.isEmpty())return "PCと未接続です";
   try(BookStore store=new BookStore(context)){
@@ -79,7 +85,10 @@ final class SyncClient {
    for(int i=0;i<index.length();i++){JSONObject item=index.getJSONObject(i);remote.put(item.getString("uuid"),item.getInt("revision"));}
    int uploaded=0,downloaded=0,conflicts=0;
    for(SyncBookCodec.State state:local.values()){
-    BookStore.Book localBook=store.getBook(state.id);if(localBook!=null&&"capturing".equals(localBook.state))continue;
+    BookStore.Book localBook=store.getBook(state.id);
+    // Reserve the UUID even while capture is active. Otherwise the remote-only pass
+    // below downloads an older snapshot over the book being captured.
+    if(localBook!=null&&"capturing".equals(localBook.state)){remote.remove(state.uuid);continue;}
     Integer serverRevision=remote.remove(state.uuid);
     if(serverRevision==null){JSONObject snapshot=SyncBookCodec.exportBook(store,state.id);
      int revision=request(host,pin,token,"PUT","/v1/books/"+state.uuid,new JSONObject().put("base_revision",0).put("book",snapshot)).getInt("revision");

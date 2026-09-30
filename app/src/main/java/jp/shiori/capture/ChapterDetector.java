@@ -62,8 +62,14 @@ final class ChapterDetector {
  private static boolean matches(String entry,String candidate){
   String a=key(entry),b=key(candidate);if(a.isEmpty()||b.isEmpty())return false;
   if(a.equals(b))return true;
-  int first=ordinal(entry),second=ordinal(candidate);if(first>=0&&first==second)return true;
-  if(Math.min(a.length(),b.length())>=4&&(a.contains(b)||b.contains(a)))return true;
+  String heading=candidate.trim();
+  if(heading.length()>65||heading.matches(".*[。！？!?、].*"))return false;
+  int first=ordinal(entry),second=ordinal(candidate);
+  if(first>=0&&first==second&&HEADING.matcher(heading).matches())return true;
+  if(b.startsWith(a)&&b.length()>a.length()
+   &&b.substring(a.length()).matches("^(?:は|が|を|に|で|と|も|です|ます|でした|だった).*"))return false;
+  if(Math.min(a.length(),b.length())>=4&&(a.contains(b)||b.contains(a))
+   &&Math.abs(a.length()-b.length())<=Math.max(4,Math.min(a.length(),b.length())/3))return true;
   int limit=Math.max(a.length(),b.length())>=9?2:1;
   return Math.min(a.length(),b.length())>=5&&distance(a,b,limit)<=limit;
  }
