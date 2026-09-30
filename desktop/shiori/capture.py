@@ -11,6 +11,7 @@ import sys
 import re
 import threading
 import time
+import unicodedata
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -228,19 +229,26 @@ def build_chapters(book: dict) -> None:
     if book.get("chapters_edited"):
         return
     paragraphs = book["paragraphs"]
-    toc_titles = [p["text"].strip("・.． 　0123456789０１２３４５６７８９") for p in paragraphs
+    def heading_key(value: str) -> str:
+        normalized = unicodedata.normalize("NFKC", value)
+        return re.sub(r"[\s・.．「」『』:：]+", "", normalized)
+
+    toc_titles = [p["text"].strip("・.． 　") for p in paragraphs
                   if p.get("page_kind") == "toc" and p["text"] not in ("目次", "もくじ")]
+    toc_by_key = {heading_key(title): title for title in toc_titles if len(heading_key(title)) >= 3}
     existing_ids = {chapter["start_seq"]: chapter["uuid"] for chapter in book["chapters"]}
     chapters = []
     for paragraph in paragraphs:
         if paragraph.get("hidden"):
             continue
         for line in paragraph["text"].splitlines():
-            matched = next((title for title in toc_titles if len(title) >= 3 and (title == line or title in line or line in title)), None)
+            matched = toc_by_key.get(heading_key(line))
             if HEADING.match(line) or matched:
-                matched = matched or line
+                title = matched or line
+                if chapters and heading_key(chapters[-1]["title"]) == heading_key(title):
+                    break
                 chapters.append({"uuid": existing_ids.get(paragraph["seq"], str(uuid.uuid4())),
-                                 "start_seq": paragraph["seq"], "title": matched})
+                                 "start_seq": paragraph["seq"], "title": title})
                 break
     if not chapters and paragraphs:
         first = next((p for p in paragraphs if not p.get("hidden")), paragraphs[0])

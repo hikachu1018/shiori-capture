@@ -12,7 +12,7 @@ from unittest import mock
 
 from PIL import Image
 
-from shiori.app import App, acquire_single_instance
+from shiori.app import App, acquire_single_instance, repair_missing_chapters
 from shiori.capture import CaptureSession, CaptureUnavailable, active_kindle_window, build_chapters, clean_text, kindle_window
 from shiori.library import Conflict, Library, new_book
 from shiori.sync import SyncServer
@@ -80,6 +80,38 @@ class LibraryTests(unittest.TestCase):
         first_id = book["chapters"][0]["uuid"]
         build_chapters(book)
         self.assertEqual(book["chapters"][0]["uuid"], first_id)
+
+    def test_toc_word_in_body_sentence_is_not_a_chapter(self):
+        book = new_book("目次の検証")
+        values = [
+            ("目次", True, "toc"),
+            ("動物農場", True, "toc"),
+            ("動物農場", False, "body"),
+            ("この文では動物農場という本を説明している。", False, "body"),
+            ("第一章", False, "body"),
+            ("第一章", False, "body"),
+            ("第二章", False, "body"),
+        ]
+        book["paragraphs"] = [{"uuid": str(uuid.uuid4()), "seq": i, "screen": i + 1,
+                               "text": text, "hidden": hidden, "page_kind": kind}
+                              for i, (text, hidden, kind) in enumerate(values)]
+        build_chapters(book)
+        self.assertEqual([(c["start_seq"], c["title"]) for c in book["chapters"]],
+                         [(2, "動物農場"), (4, "第一章"), (6, "第二章")])
+
+    def test_repairs_missing_chapters_in_existing_partial_book_once(self):
+        book = new_book("途中で停止した本")
+        book["paragraphs"] = [
+            {"uuid": str(uuid.uuid4()), "seq": 0, "screen": 1, "text": "目次", "hidden": True, "page_kind": "toc"},
+            {"uuid": str(uuid.uuid4()), "seq": 1, "screen": 1, "text": "第一章 はじまり", "hidden": True, "page_kind": "toc"},
+            {"uuid": str(uuid.uuid4()), "seq": 2, "screen": 2, "text": "第一章 はじまり", "hidden": False, "page_kind": "body"},
+        ]
+        self.library.put(book, 0)
+        self.assertEqual(repair_missing_chapters(self.library), 1)
+        chapters = self.library.get(book["uuid"])[1]["chapters"]
+        self.assertEqual((chapters[0]["start_seq"], chapters[0]["title"]), (2, "第一章 はじまり"))
+        self.assertEqual(repair_missing_chapters(self.library), 0)
+        self.assertEqual(self.library.get(book["uuid"])[1]["chapters"], chapters)
 
     def test_footer_removed(self):
         self.assertEqual(clean_text("本文\n章を読み終えるまで: 5分 42%\n続き"), "本文\n続き")
@@ -268,6 +300,7 @@ class LibraryTests(unittest.TestCase):
              mock.patch("shiori.app.Library") as library, \
              mock.patch("shiori.app.SyncServer", side_effect=OSError("port busy")), \
              mock.patch("shiori.app.messagebox.showerror") as show_error:
+            library.return_value.index.return_value = []
             with self.assertRaises(SystemExit):
                 App()
             self.assertIn("旧版", show_error.call_args.args[1])

@@ -46,12 +46,30 @@ def acquire_single_instance() -> bool:
     return True
 
 
+def repair_missing_chapters(library: Library) -> int:
+    """Finish chapter detection for older captures interrupted before finalization."""
+    repaired = 0
+    for entry in library.index():
+        if entry["deleted_at"]:
+            continue
+        record = library.get(entry["uuid"])
+        if not record:
+            continue
+        book = record[1]
+        if (book["paragraphs"] and not book["chapters"] and not book.get("chapters_edited")
+                and any(not paragraph.get("hidden") for paragraph in book["paragraphs"])):
+            library.update(entry["uuid"], build_chapters)
+            repaired += 1
+    return repaired
+
+
 class App:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("しおり Capture PC 0.5.2")
         self.root.geometry("1000x710")
         self.library = Library(app_data() / "books.db")
+        repair_missing_chapters(self.library)
         try:
             self.server = SyncServer(self.library, app_data())
         except OSError as exc:
