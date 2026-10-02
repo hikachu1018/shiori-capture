@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
 $python = if ($env:SHIORI_PYTHON) { $env:SHIORI_PYTHON } else { Join-Path $PSScriptRoot '.venv\Scripts\python.exe' }
 if (-not (Test-Path -LiteralPath $python)) { throw "ビルド用Pythonがありません: $python" }
